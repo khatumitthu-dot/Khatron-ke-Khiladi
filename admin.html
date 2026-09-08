@@ -1330,29 +1330,19 @@ async function restoreServerBackup(){
 })();
 </script>
 
-<!-- Music panel: now-playing bar + hidden YouTube player mount -->
-<div id="musicBar" style="display:none;position:fixed;left:0;right:0;bottom:0;background:#0b121c;border-top:1px solid #1a2737;padding:10px 14px;align-items:center;gap:10px;z-index:9999">
-  <img id="musicBarImg" src="" alt="" style="width:44px;height:44px;border-radius:8px;object-fit:cover;flex-shrink:0">
-  <div style="flex:1;min-width:0">
-    <div id="musicBarTitle" style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#e8ecf1"></div>
-    <div id="musicBarStatus" style="font-size:11px;color:#86efac;margin-top:2px"></div>
-  </div>
-  <button class="btn primary" onclick="musicToggle()" id="musicBarBtn" style="min-width:44px">⏸</button>
-</div>
-<div id="ytPlayerMount" style="display:none"></div>
+<!-- Music playback bar + player are provided by music-player.js (shared across the whole site) -->
+<script src="music-player.js"></script>
 
 <script>
 // ---------------------------------------------------------
-// Private Music Panel — search via YouTube Data API v3,
-// playback via the official YouTube IFrame Player.
+// Private Music Panel — SEARCH ONLY, via YouTube Data API v3.
+// Actual playback (the bar + YouTube player) lives in
+// music-player.js so it can keep playing on every other page.
 // Nothing is hosted or downloaded on this server; YouTube's
 // own servers handle the audio/video. Keep this tab behind
 // admin login only.
 // ---------------------------------------------------------
 const YT_MUSIC_API_KEY = 'AIzaSyD6yKVtt6z-2YLEYIihDEzaElGa_GwwiaY';
-let ytMusicPlayer = null;
-let ytMusicPlaying = false;
-let _pendingMusicVideo = null;
 
 function musicSearch(){
   const q = (document.getElementById('musicQuery')?.value || '').trim();
@@ -1387,65 +1377,7 @@ function fcEscapeMusic(s){
   return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/'/g,'&#39;').replace(/"/g,'&quot;');
 }
 
-function musicPlay(videoId, title, thumb){
-  const bar = document.getElementById('musicBar');
-  bar.style.display = 'flex';
-  document.getElementById('musicBarImg').src = thumb;
-  document.getElementById('musicBarTitle').textContent = title;
-  document.getElementById('musicBarStatus').textContent = 'Ab baj raha hai';
-  document.getElementById('musicBarBtn').textContent = '⏸';
-  ytMusicPlaying = true;
-
-  if(ytMusicPlayer){
-    ytMusicPlayer.loadVideoById(videoId);
-  } else if(window.YT && window.YT.Player){
-    createYtMusicPlayer(videoId);
-  } else {
-    _pendingMusicVideo = videoId;
-    if(!document.getElementById('ytIframeApiScript')){
-      const tag = document.createElement('script');
-      tag.id = 'ytIframeApiScript';
-      tag.src = 'https://www.youtube.com/iframe_api';
-      document.body.appendChild(tag);
-    }
-  }
-}
-
-function createYtMusicPlayer(videoId){
-  ytMusicPlayer = new YT.Player('ytPlayerMount', {
-    height: '0',
-    width: '0',
-    videoId: videoId,
-    playerVars: { autoplay: 1 },
-    events: {
-      onReady: e => e.target.playVideo(),
-      onStateChange: e => {
-        if(e.data === YT.PlayerState.PLAYING){
-          ytMusicPlaying = true;
-          document.getElementById('musicBarStatus').textContent = 'Ab baj raha hai';
-          document.getElementById('musicBarBtn').textContent = '⏸';
-        }
-        if(e.data === YT.PlayerState.PAUSED){
-          ytMusicPlaying = false;
-          document.getElementById('musicBarStatus').textContent = 'Pause hai';
-          document.getElementById('musicBarBtn').textContent = '▶';
-        }
-      }
-    }
-  });
-}
-
-// Called automatically by the YouTube IFrame API script once it loads
-function onYouTubeIframeAPIReady(){
-  if(_pendingMusicVideo){
-    createYtMusicPlayer(_pendingMusicVideo);
-    _pendingMusicVideo = null;
-  }
-}
-
-function musicToggle(){
-  if(!ytMusicPlayer) return;
-  if(ytMusicPlaying){ ytMusicPlayer.pauseVideo(); } else { ytMusicPlayer.playVideo(); }
-}
+// musicPlay() itself now lives in music-player.js (window.musicPlay) —
+// it's called from the search results above exactly as before.
 </script>
 </body></html>

@@ -878,5 +878,6 @@ function hardenMediaFallbacks(){document.querySelectorAll('img').forEach(img=>{i
 async function syncServerPresentation(){try{const r=await fetch('/api/site-config',{cache:'no-store'});if(!r.ok)return;const d=await r.json();applyServerTheme(d.site||{});window.ytStore=d.site?.store||{};window.ytStoreSettings=d.settings||{};hardenMediaFallbacks()}catch(_){}}
 syncServerPresentation();setInterval(syncServerPresentation,15000);hardenMediaFallbacks();
 </script>
+<script src="music-player.js"></script>
 </body>
 </html>
