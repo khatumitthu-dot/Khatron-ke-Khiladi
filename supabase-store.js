@@ -85,6 +85,20 @@ async function deleteMedia(objectName){
   if(!r.ok && r.status!==404){const t=await r.text();throw new Error(`Storage delete failed (${r.status}): ${t||'Unknown error'}`);}
   return true;
 }
+
+async function deleteWhere(table, column, value){
+  if(!enabled || disabledTables.has(table)) return;
+  try{
+    await request(table,'DELETE',null,encodeURIComponent(column)+'=eq.'+encodeURIComponent(String(value)));
+  }catch(e){
+    if(/\b404\b/.test(cleanError(e))){
+      disabledTables.add(table);
+      console.warn(`[Supabase] Optional table "${table}" is not available through PostgREST; skipping its delete.`);
+      return;
+    }
+    throw e;
+  }
+}
 async function migrateLocalUploads(dir,db){
   if(!enabled) return {migrated:0};
   let entries=[];
@@ -225,20 +239,6 @@ async function persistDb(db, initial=false){
       if(/\b404\b/.test(cleanError(e))){
         disabledTables.add(table);
         console.warn(`[Supabase] Optional table "${table}" is not available through PostgREST; skipping its sync.`);
-        return;
-      }
-      throw e;
-    }
-  }
-
-  async function deleteWhere(table, column, value){
-    if(!enabled || disabledTables.has(table)) return;
-    try{
-      await request(table,'DELETE',null,encodeURIComponent(column)+'=eq.'+encodeURIComponent(String(value)));
-    }catch(e){
-      if(/\b404\b/.test(cleanError(e))){
-        disabledTables.add(table);
-        console.warn(`[Supabase] Optional table "${table}" is not available through PostgREST; skipping its delete.`);
         return;
       }
       throw e;

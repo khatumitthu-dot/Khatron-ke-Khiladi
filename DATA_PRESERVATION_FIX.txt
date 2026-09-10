@@ -1,0 +1,18 @@
+YOUR TYPE — DATA PRESERVATION FIX
+
+Root cause found in the exact current project:
+The Supabase save routine was doing a full-table replacement. On every save (including
+product updates), it deleted remote rows that were not present in the current in-memory
+snapshot. If that snapshot was empty/incomplete because a previous Supabase save had
+failed, orders/customers/etc. could be deleted from Supabase.
+
+Fixed:
+1. Normal saves now UPSERT existing rows and do not delete unrelated remote rows.
+2. order_items is no longer globally wiped on every save. Only items belonging to
+   orders present in the current snapshot are refreshed.
+3. Explicit admin delete actions still delete their corresponding remote records.
+4. Product tombstones remain intact, so intentionally deleted products stay deleted.
+5. No admin password, website theme, product UI, or unrelated layout was changed.
+
+Database:
+Run SUPABASE_COMPLETE_COLUMNS_FIX.sql in Supabase SQL Editor.
