@@ -216,9 +216,10 @@ async function persistDb(db, initial=false){
   async function replaceTable(table, rows, key){
     if(disabledTables.has(table)) return;
     try{
-      const existing=await request(table,'GET',null,'select='+encodeURIComponent(key));
-      const keep=new Set(rows.map(r=>String(r[key])));
-      for(const r of existing||[]){ if(!keep.has(String(r[key]))){ await request(table,'DELETE',null,encodeURIComponent(key)+'=eq.'+encodeURIComponent(String(r[key]))); } }
+      // IMPORTANT: a normal save must NEVER delete remote rows merely because the
+      // in-memory snapshot is empty/incomplete. A product/settings update should
+      // not be capable of erasing orders, customers, reviews, etc. Explicit delete
+      // actions are handled separately by the API routes.
       if(rows.length) await request(table,'POST',rows,'on_conflict='+encodeURIComponent(key));
     }catch(e){
       if(/\b404\b/.test(cleanError(e))){
@@ -230,13 +231,38 @@ async function persistDb(db, initial=false){
     }
   }
 
+  async function deleteWhere(table, column, value){
+    if(!enabled || disabledTables.has(table)) return;
+    try{
+      await request(table,'DELETE',null,encodeURIComponent(column)+'=eq.'+encodeURIComponent(String(value)));
+    }catch(e){
+      if(/\b404\b/.test(cleanError(e))){
+        disabledTables.add(table);
+        console.warn(`[Supabase] Optional table "${table}" is not available through PostgREST; skipping its delete.`);
+        return;
+      }
+      throw e;
+    }
+  }
+
   await replaceTable('products',productRows,'id');
   await replaceTable('customers',customerRows,'id');
   await replaceTable('orders',orderRows,'order_id');
   if(!disabledTables.has('order_items')){
     try{
-      await request('order_items','DELETE',null,'order_id=not.is.null');
-      if(itemRows.length) await request('order_items','POST',itemRows);
+      // Only refresh items belonging to orders present in this snapshot. Never
+      // wipe every order_item just because another save (e.g. product update)
+      // happened while the local order list was empty/incomplete.
+      const localOrderIds=[...new Set((d.orders||[]).map(o=>String(o.orderId)).filter(Boolean))];
+      if(localOrderIds.length){
+        const existing=await request('order_items','GET',null,'select=order_id');
+        const localSet=new Set(localOrderIds);
+        for(const r of existing||[]){
+          const oid=String(r.order_id||'');
+          if(localSet.has(oid)) await request('order_items','DELETE',null,'order_id=eq.'+encodeURIComponent(oid));
+        }
+        if(itemRows.length) await request('order_items','POST',itemRows);
+      }
     }catch(e){
       if(/\b404\b/.test(cleanError(e))){
         disabledTables.add('order_items');
@@ -281,4 +307,4 @@ function queueSave(db){
 async function flush(){ return writeQueue; }
 function status(){ return {enabled,configured:enabled,lastSync,lastError,pending:false}; }
 
-module.exports={enabled,hydrateDb,persistDb,queueSave,flush,status,uploadMedia,deleteMedia,listMedia,publicMediaUrl,migrateLocalUploads,ensureStorageBucket};
+module.exports={enabled,hydrateDb,persistDb,queueSave,flush,status,uploadMedia,deleteMedia,deleteWhere,listMedia,publicMediaUrl,migrateLocalUploads,ensureStorageBucket};
