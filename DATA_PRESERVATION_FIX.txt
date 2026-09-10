@@ -16,3 +16,6 @@ Fixed:
 
 Database:
 Run SUPABASE_COMPLETE_COLUMNS_FIX.sql in Supabase SQL Editor.
+
+
+V3 fixes: coupon persistence/validation, server-side coupon calculation, order discount columns, and India-time order display.

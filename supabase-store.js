@@ -250,19 +250,12 @@ async function persistDb(db, initial=false){
   await replaceTable('orders',orderRows,'order_id');
   if(!disabledTables.has('order_items')){
     try{
-      // Only refresh items belonging to orders present in this snapshot. Never
-      // wipe every order_item just because another save (e.g. product update)
-      // happened while the local order list was empty/incomplete.
-      const localOrderIds=[...new Set((d.orders||[]).map(o=>String(o.orderId)).filter(Boolean))];
-      if(localOrderIds.length){
-        const existing=await request('order_items','GET',null,'select=order_id');
-        const localSet=new Set(localOrderIds);
-        for(const r of existing||[]){
-          const oid=String(r.order_id||'');
-          if(localSet.has(oid)) await request('order_items','DELETE',null,'order_id=eq.'+encodeURIComponent(oid));
-        }
-        if(itemRows.length) await request('order_items','POST',itemRows);
-      }
+      // NORMAL SAVES MUST NEVER DELETE order items. A product/settings update can
+      // arrive with an incomplete in-memory order snapshot; deleting/rebuilding
+      // items here could permanently erase a customer's order lines. Order items
+      // are therefore append/upsert-only during normal saves. The ONLY deletion
+      // path is the explicit admin order-delete route in server.js.
+      if(itemRows.length) await request('order_items','POST',itemRows,'on_conflict=order_id,product_id,size,color');
     }catch(e){
       if(/\b404\b/.test(cleanError(e))){
         disabledTables.add('order_items');

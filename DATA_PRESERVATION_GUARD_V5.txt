@@ -1,0 +1,13 @@
+YOUR TYPE — DATA PRESERVATION GUARD V5
+
+Purpose:
+- Normal product, settings, website, coupon, or order-status updates must never delete unrelated remote data.
+- Normal Supabase saves are upsert-only; they do not prune remote rows.
+- Normal saves never delete order_items. Order items are upserted only.
+- Orders and order_items are deleted remotely only when an administrator explicitly uses Delete Order.
+- Customer/coupon/review explicit deletes are handled by their admin delete routes.
+- Product deletion uses a tombstone so deleted products do not resurrect.
+- The admin password is not changed by this fix.
+
+Important:
+Run the required Supabase missing-column SQL before testing order creation.
