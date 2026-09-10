@@ -1,0 +1,15 @@
+YOUR TYPE — Supabase/Render fix
+
+Fixed in this build:
+1. site_config sync no longer sends the unsupported `content` column that caused HTTP 400 / schema-cache errors.
+2. Storage bucket detection is more compatible: it falls back to listing buckets when the direct bucket check returns 400/404, and creates the configured bucket if it is genuinely missing.
+3. Existing website/admin UI, products, videos, styles and layouts were left unchanged.
+
+Render requirements:
+- SUPABASE_URL
+- SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SECRET_KEY)
+- SUPABASE_STORAGE_BUCKET (optional; defaults to your-type-media)
+- ADMIN_USER
+- ADMIN_PASS
+
+Important: use the Supabase service-role/secret key on Render, not the public anon key, because the server creates/uploads to the Storage bucket.

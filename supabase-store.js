@@ -23,11 +23,37 @@ function publicMediaUrl(objectName){
 async function ensureStorageBucket(){
   if(!enabled) return false;
   const base=SUPABASE_URL.replace(/\/$/,'')+'/storage/v1';
-  const check=await fetch(base+'/bucket/'+encodeURIComponent(SUPABASE_STORAGE_BUCKET),{headers:storageHeaders()});
+  const bucket=encodeURIComponent(SUPABASE_STORAGE_BUCKET);
+
+  // First try the direct bucket lookup. Some Supabase Storage deployments return
+  // 400 instead of 404 for a missing/unreachable bucket, so fall back to the
+  // bucket list before deciding that Storage is unavailable.
+  const check=await fetch(base+'/bucket/'+bucket,{headers:storageHeaders()});
   if(check.ok) return true;
-  if(check.status!==404) throw new Error(`Storage bucket check failed (${check.status})`);
+
+  let listed=null;
+  if(check.status===400 || check.status===404){
+    try{
+      const list=await fetch(base+'/buckets',{headers:storageHeaders()});
+      if(list.ok){
+        const rows=await list.json();
+        listed=(Array.isArray(rows)?rows:[]).find(x=>String(x?.id||x?.name||'')===SUPABASE_STORAGE_BUCKET);
+        if(listed) return true;
+      }
+    }catch{}
+  }
+
+  if(check.status!==404 && !((check.status===400)&&listed===null)){
+    const t=await check.text(); throw new Error(`Storage bucket check failed (${check.status}): ${t||'Unknown error'}`);
+  }
+
+  // Bucket is genuinely missing: create it. This requires the Supabase
+  // service-role/secret key configured in Render, not the public anon key.
   const create=await fetch(base+'/bucket',{method:'POST',headers:{...storageHeaders(),'Content-Type':'application/json'},body:JSON.stringify({id:SUPABASE_STORAGE_BUCKET,name:SUPABASE_STORAGE_BUCKET,public:true})});
-  if(!create.ok && create.status!==409){const t=await create.text();throw new Error(`Storage bucket creation failed (${create.status}): ${t||'Unknown error'}`);}
+  if(!create.ok && create.status!==409){
+    const t=await create.text();
+    throw new Error(`Storage bucket creation failed (${create.status}): ${t||'Unknown error'}`);
+  }
   return true;
 }
 async function uploadMedia(buffer,objectName,contentType){
@@ -226,7 +252,12 @@ async function persistDb(db, initial=false){
   await replaceTable('newsletter',newsletterRows,'email');
   await replaceTable('notifications',notificationRows,'id');
   await replaceTable('audit',auditRows,'id');
-  try{ await request('site_config','POST',{id:1,hero:d.site?.hero||'YOUR TYPE',announcement:d.site?.announcement||'',sections:d.site?.sections||{},section_products:d.site?.sectionProducts||{},color_palette:d.site?.colorPalette||[],store:d.site?.store||{},content:d.site?.content||{},categories:d.site?.categories||[]},'on_conflict=id'); }
+  // Keep this payload aligned with the deployed site_config table. The current
+  // schema does not expose a `content` column (PostgREST schema-cache error
+  // otherwise makes every site-config save fail with HTTP 400). The content
+  // object is still retained in the local runtime and served by /api/site-config.
+  const siteConfigRow={id:1,hero:d.site?.hero||'YOUR TYPE',announcement:d.site?.announcement||'',sections:d.site?.sections||{},section_products:d.site?.sectionProducts||{},color_palette:d.site?.colorPalette||[],store:d.site?.store||{},categories:d.site?.categories||[]};
+  try{ await request('site_config','POST',siteConfigRow,'on_conflict=id'); }
   catch(e){ if(/\b404\b/.test(cleanError(e))){ disabledTables.add('site_config'); console.warn('[Supabase] Optional table "site_config" is not available through PostgREST; skipping its sync.'); } else throw e; }
   try{ await request('store_settings','POST',{id:1,gst:Number(d.settings?.gst||0),shipping:Number(d.settings?.shipping||0),free_shipping:Number(d.settings?.freeShipping||0),gateway:d.settings?.gateway||{},courier:d.settings?.courier||{},notifications:d.settings?.notifications||{},role:d.settings?.role||'Super Admin'},'on_conflict=id'); }
   catch(e){ if(/\b404\b/.test(cleanError(e))){ disabledTables.add('store_settings'); console.warn('[Supabase] Optional table "store_settings" is not available through PostgREST; skipping its sync.'); } else throw e; }
