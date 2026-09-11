@@ -1,17 +1,17 @@
 /* =========================================================
-   PREMIUM PRODUCT ANIMATIONS — behaviour layer
+   PREMIUM PRODUCT ANIMATIONS v2 — behaviour layer
    Purely additive: only adds/removes CSS classes and small
    decorative elements. Does not touch cart/wishlist/product
    logic in index.html, so it's safe to drop in alongside it.
-   Load this AFTER index.html's own <script> blocks.
    ========================================================= */
 (function(){
   "use strict";
   var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var canHover = window.matchMedia && window.matchMedia('(hover: hover)').matches;
 
   /* ---- 1. Reveal-on-scroll for product cards ---- */
   var io = ('IntersectionObserver' in window) ? new IntersectionObserver(function(entries){
-    entries.forEach(function(entry, i){
+    entries.forEach(function(entry){
       if (entry.isIntersecting){
         var el = entry.target;
         var delay = (Number(el.dataset.revealIndex || 0) % 9) * 60;
@@ -28,7 +28,6 @@
     if (io && !reduced) io.observe(card);
     else card.classList.add('inView');
 
-    /* image skeleton loading */
     var pic = card.querySelector('.pic');
     var img = card.querySelector('.pic img');
     if (pic && img){
@@ -39,22 +38,6 @@
       }
     }
 
-    /* 3D tilt / parallax on hover, mouse-driven */
-    if (pic && !reduced && window.matchMedia('(hover: hover)').matches){
-      pic.addEventListener('mousemove', function(e){
-        var r = pic.getBoundingClientRect();
-        var px = (e.clientX - r.left) / r.width - 0.5;
-        var py = (e.clientY - r.top) / r.height - 0.5;
-        pic.style.setProperty('--rx', (px * 6).toFixed(2) + 'deg');
-        pic.style.setProperty('--ry', (py * -6).toFixed(2) + 'deg');
-      });
-      pic.addEventListener('mouseleave', function(){
-        pic.style.setProperty('--rx', '0deg');
-        pic.style.setProperty('--ry', '0deg');
-      });
-    }
-
-    /* wrap add-to-bag label text once, so CSS can append a checkmark state */
     var addBtn = card.querySelector('.add');
     if (addBtn && !addBtn.querySelector('.addLabel')){
       var label = document.createElement('span');
@@ -69,7 +52,6 @@
     document.querySelectorAll('.grid .card, .curatedGrid .card').forEach(wireCard);
   }
 
-  /* Watch for cards being (re)rendered by the store's own JS */
   var mo = new MutationObserver(function(){ scanCards(); });
   ['products','trendingGrid'].forEach(function(id){
     var el = document.getElementById(id);
@@ -77,9 +59,21 @@
   });
   document.addEventListener('DOMContentLoaded', scanCards);
   scanCards();
-  setTimeout(scanCards, 800); // catch late API-loaded renders
+  setTimeout(scanCards, 800);
 
-  /* ---- 2. Wishlist heart: pop + tiny particle burst ---- */
+  /* ---- 2. Cursor spotlight across the product grid (desktop only) ---- */
+  if (canHover && !reduced){
+    document.querySelectorAll('.productsSection').forEach(function(section){
+      section.classList.add('spotlightOn');
+      section.addEventListener('mousemove', function(e){
+        var r = section.getBoundingClientRect();
+        section.style.setProperty('--spotX', (e.clientX - r.left) + 'px');
+        section.style.setProperty('--spotY', (e.clientY - r.top) + 'px');
+      });
+    });
+  }
+
+  /* ---- 3. Wishlist heart: pop + particle burst ---- */
   document.addEventListener('click', function(e){
     var heart = e.target.closest('.heart');
     if (!heart) return;
@@ -100,28 +94,88 @@
     }
   });
 
-  /* ---- 3. Add-to-bag: fill-wipe success state + header cart bump ---- */
+  /* ---- 4. Digit-morph helper for the cart count badge ---- */
+  function morphCount(countEl, fromValue, toValue){
+    if (String(fromValue) === String(toValue)) return;
+    countEl.innerHTML = '<span class="digitOld">' + fromValue + '</span><span class="digitNew">' + toValue + '</span>';
+    countEl.classList.remove('morph'); void countEl.offsetWidth; countEl.classList.add('morph');
+    setTimeout(function(){ countEl.textContent = String(toValue); countEl.classList.remove('morph'); }, 420);
+  }
+
+  /* ---- 5. FLY-TO-CART + Add-to-bag success state ---- */
+  function flyToCart(sourceImg, cartEl, onLand){
+    if (!sourceImg || !cartEl || reduced){ if (onLand) onLand(); return; }
+    var sRect = sourceImg.getBoundingClientRect();
+    var tRect = cartEl.getBoundingClientRect();
+    var clone = sourceImg.cloneNode(true);
+    clone.className = 'flyClone';
+    clone.style.left = sRect.left + 'px';
+    clone.style.top = sRect.top + 'px';
+    clone.style.width = sRect.width + 'px';
+    clone.style.height = sRect.height + 'px';
+    document.body.appendChild(clone);
+
+    var tx = (tRect.left + tRect.width / 2) - (sRect.left + sRect.width / 2);
+    var ty = (tRect.top + tRect.height / 2) - (sRect.top + sRect.height / 2);
+    clone.style.setProperty('--tx', tx + 'px');
+    clone.style.setProperty('--ty', ty + 'px');
+
+    requestAnimationFrame(function(){
+      requestAnimationFrame(function(){ clone.classList.add('flying'); });
+    });
+
+    setTimeout(function(){
+      clone.remove();
+      var ring = document.createElement('span');
+      ring.className = 'impactRing';
+      cartEl.appendChild(ring);
+      setTimeout(function(){ ring.remove(); }, 520);
+
+      cartEl.classList.remove('cartBump'); void cartEl.offsetWidth; cartEl.classList.add('cartBump');
+      setTimeout(function(){ cartEl.classList.remove('cartBump'); }, 520);
+
+      if (onLand) onLand();
+    }, 780);
+  }
+
+  /* Capture phase: snapshot the cart count BEFORE the store's own click
+     handler (registered earlier, bubble phase) has a chance to update it. */
+  document.addEventListener('click', function(e){
+    var btn = e.target.closest('[data-add-to-bag]');
+    if (!btn) return;
+    var countEl = document.querySelector('.bag .cartCount');
+    btn._ytPrevCount = countEl ? countEl.textContent.trim() : null;
+  }, true);
+
+  /* Bubble phase (registered after the store's own listener): by now the
+     real cart/count has already been updated, so just animate the
+     transition from the snapshotted old value to whatever it is now. */
   document.addEventListener('click', function(e){
     var btn = e.target.closest('[data-add-to-bag]');
     if (!btn || btn.disabled) return;
+
     btn.classList.remove('justAdded');
     void btn.offsetWidth;
     btn.classList.add('justAdded');
     setTimeout(function(){ btn.classList.remove('justAdded'); }, 1500);
 
+    var card = btn.closest('.card');
+    var sourceImg = card ? card.querySelector('.pic img') : null;
     var bagIcon = document.querySelector('.bag');
-    var count = document.querySelector('.bag .cartCount');
-    if (bagIcon){
-      bagIcon.classList.remove('cartBump');
-      void bagIcon.offsetWidth;
-      bagIcon.classList.add('cartBump');
-      setTimeout(function(){ bagIcon.classList.remove('cartBump'); }, 500);
+    var countEl = bagIcon ? bagIcon.querySelector('.cartCount') : null;
+    var prev = btn._ytPrevCount;
+    var current = countEl ? countEl.textContent.trim() : null;
+
+    function land(){
+      if (countEl && prev !== null && current !== null) morphCount(countEl, prev, current);
     }
-    if (count){
-      count.classList.remove('bump');
-      void count.offsetWidth;
-      count.classList.add('bump');
-      setTimeout(function(){ count.classList.remove('bump'); }, 450);
+
+    if (sourceImg && bagIcon){
+      flyToCart(sourceImg, bagIcon, land);
+    } else if (bagIcon){
+      bagIcon.classList.remove('cartBump'); void bagIcon.offsetWidth; bagIcon.classList.add('cartBump');
+      setTimeout(function(){ bagIcon.classList.remove('cartBump'); }, 500);
+      land();
     }
   });
 })();
