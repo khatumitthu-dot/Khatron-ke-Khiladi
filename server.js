@@ -81,7 +81,7 @@ async function api(req,res,p){
   if(req.method==='POST'&&p==='/api/admin/change-password'){if(!auth(req,'admin'))return send(res,401,{error:'Unauthorized'},'application/json',origin);const x=await body(req);if(!verifyAdminPassword(x.currentPassword))return send(res,401,{error:'Current password is incorrect'},'application/json',origin);if(!strongPassword(x.newPassword))return send(res,400,{error:'New password must be 12–128 characters and include uppercase, lowercase, number and symbol'},'application/json',origin);adminAuth=saveAdminAuth(x.newPassword);db.sessions={};audit('admin.change-password');save(db);return send(res,200,{ok:true},'application/json',origin)}
   if(req.method==='POST'&&p==='/api/admin/reset-password'){const x=await body(req);if(!ADMIN_RESET_TOKEN||x.resetToken!==ADMIN_RESET_TOKEN)return send(res,401,{error:'Invalid reset token'},'application/json',origin);if(!strongPassword(x.newPassword))return send(res,400,{error:'New password must be 12–128 characters and include uppercase, lowercase, number and symbol'},'application/json',origin);adminAuth=saveAdminAuth(x.newPassword);db.sessions={};save(db);return send(res,200,{ok:true},'application/json',origin)}
 
-  if(req.method==='POST'&&p==='/api/auth/signup'){const x=await body(req),name=String(x.name||'').trim(),email=String(x.email||'').trim().toLowerCase(),password=String(x.password||'');if(!name||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||password.length<8)return send(res,400,{error:'Name, valid email and an 8+ character password are required'},'application/json',origin);if(db.users.some(u=>u.email===email))return send(res,409,{error:'Account already exists'},'application/json',origin);const u={id:crypto.randomUUID(),name,email,password:hash(password),createdAt:new Date().toISOString()};db.users.push(u);save(db);return send(res,201,{ok:true,token:newSession('customer',u.id),name,email},'application/json',origin)}
+  if(req.method==='POST'&&p==='/api/auth/signup'){const x=await body(req),name=String(x.name||'').trim(),email=String(x.email||'').trim().toLowerCase(),password=String(x.password||'');if(!name||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||password.length<8)return send(res,400,{error:'Name, valid email and an 8+ character password are required'},'application/json',origin);if(db.users.some(u=>u.email===email))return send(res,409,{error:'Account already exists'},'application/json',origin);const u={id:crypto.randomUUID(),name,email,password:hash(password),createdAt:new Date().toISOString()};db.users.push(u);await saveAndFlush(db);return send(res,201,{ok:true,token:newSession('customer',u.id),name,email},'application/json',origin)}
   if(req.method==='POST'&&p==='/api/auth/signin'){const x=await body(req),email=String(x.email||'').trim().toLowerCase(),u=db.users.find(v=>v.email===email&&v.password===hash(x.password||''));if(!u)return send(res,401,{error:'Invalid email or password'},'application/json',origin);return send(res,200,{ok:true,token:newSession('customer',u.id),name:u.name,email:u.email},'application/json',origin)}
   if(req.method==='GET'&&p==='/api/auth/me'){const s=auth(req,'customer');if(!s)return send(res,401,{error:'Unauthorized'},'application/json',origin);const u=db.users.find(v=>v.id===s.userId);if(!u)return send(res,404,{error:'Account not found'},'application/json',origin);return send(res,200,{id:u.id,name:u.name,email:u.email},'application/json',origin)}
   if(req.method==='GET'&&p==='/api/auth/orders'){const s=auth(req,'customer');if(!s)return send(res,401,{error:'Unauthorized'},'application/json',origin);return send(res,200,{orders:db.orders.filter(o=>o.userId===s.userId).map(o=>({orderId:o.orderId,status:o.status,date:o.date,total:o.total,items:o.items}))},'application/json',origin)}
@@ -110,13 +110,13 @@ async function api(req,res,p){
    }
    const taxableSubtotal=Math.max(0,subtotal-discount),gstRate=Number(db.settings.gst||0),gst=Math.round(taxableSubtotal*gstRate/100),total=taxableSubtotal+shipping,id=orderId();
    const order={name:String(x.name).trim(),email:String(x.email).trim().toLowerCase(),phone:String(x.phone).trim(),address:String(x.address).trim(),city:String(x.city||'').trim(),pin:String(x.pin),items:requested,subtotal,discount,couponCode:appliedCoupon,taxableSubtotal,gstRate,gst,shipping,total,payment:String(x.payment||'cod').toLowerCase(),orderId:id,status:'New',date:new Date().toISOString(),userId:customer?.userId||null,verified:false,awb:'',courier:'',tracking_url:''};
-   db.orders.unshift(order);audit('order.created',{orderId:id});save(db);return send(res,201,{orderId:id,total},'application/json',origin);
+   db.orders.unshift(order);audit('order.created',{orderId:id});await saveAndFlush(db);return send(res,201,{orderId:id,total},'application/json',origin);
   }
   if(req.method==='GET'&&p.startsWith('/api/orders/')){const id=decodeURIComponent(p.slice('/api/orders/'.length)),o=db.orders.find(v=>v.orderId===id);if(!o)return send(res,404,{error:'Order not found'},'application/json',origin);return send(res,200,{orderId:o.orderId,status:o.status,date:o.date,total:o.total,items:o.items},'application/json',origin)}
 
   if(req.method==='GET'&&p==='/api/admin/data'){if(!auth(req,'admin'))return send(res,401,{error:'Unauthorized'},'application/json',origin);return send(res,200,{orders:db.orders,newsletter:db.newsletter,products:db.products.map(safeProduct),users:db.users.map(u=>({id:u.id,name:u.name,email:u.email,phone:u.phone||'',createdAt:u.createdAt})),reviews:db.reviews,coupons:db.coupons,returns:db.returns,notifications:db.notifications,audit:db.audit,settings:db.settings,site:db.site},'application/json',origin)}
   if(req.method==='GET'&&p==='/api/admin/settings'){if(!auth(req,'admin'))return send(res,401,{error:'Unauthorized'},'application/json',origin);return send(res,200,{settings:db.settings},'application/json',origin)}
-  if(req.method==='PATCH'&&p==='/api/admin/settings'){if(!auth(req,'admin'))return send(res,401,{error:'Unauthorized'},'application/json',origin);const x=await body(req);db.settings={...db.settings,...x};audit('settings.update');save(db);return send(res,200,{ok:true,settings:db.settings},'application/json',origin)}
+  if(req.method==='PATCH'&&p==='/api/admin/settings'){if(!auth(req,'admin'))return send(res,401,{error:'Unauthorized'},'application/json',origin);const x=await body(req);db.settings={...db.settings,...x};audit('settings.update');await saveAndFlush(db);return send(res,200,{ok:true,settings:db.settings},'application/json',origin)}
 
   if(req.method==='PATCH'&&p.startsWith('/api/admin/orders/')){if(!auth(req,'admin'))return send(res,401,{error:'Unauthorized'},'application/json',origin);const id=decodeURIComponent(p.slice('/api/admin/orders/'.length)),x=await body(req),o=db.orders.find(v=>v.orderId===id);if(!o)return send(res,404,{error:'Order not found'},'application/json',origin);if(x.status!==undefined&&!STATUSES.includes(x.status))return send(res,400,{error:'Invalid order status'},'application/json',origin);for(const k of ['status','awb','courier','tracking_url','verified'])if(x[k]!==undefined)o[k]=x[k];audit('order.update',{orderId:id,fields:Object.keys(x)});await saveAndFlush(db);return send(res,200,o,'application/json',origin)}
   if(req.method==='DELETE'&&p.startsWith('/api/admin/orders/')){if(!auth(req,'admin'))return send(res,401,{error:'Unauthorized'},'application/json',origin);const id=decodeURIComponent(p.slice('/api/admin/orders/'.length)),i=db.orders.findIndex(v=>v.orderId===id);if(i<0)return send(res,404,{error:'Order not found'},'application/json',origin);db.orders.splice(i,1);if(supabaseStore.enabled) await supabaseStore.deleteWhere('orders','order_id',id);if(supabaseStore.enabled) await supabaseStore.deleteWhere('order_items','order_id',id);audit('order.delete',{orderId:id});await saveAndFlush(db);return send(res,200,{ok:true},'application/json',origin)}
@@ -244,3 +244,23 @@ async function bootstrap(){
   }
 }
 bootstrap();
+
+// Render sends SIGTERM to the old process during every deploy/restart. If any
+// background Supabase write (queued via the fire-and-forget save()) is still
+// in flight at that moment, killing the process immediately would drop it —
+// which is exactly what caused orders/settings to appear "reset" after an
+// update. Give pending writes a chance to finish before the process exits.
+let shuttingDown=false;
+async function gracefulShutdown(signal){
+  if(shuttingDown)return; shuttingDown=true;
+  console.log(`[Shutdown] ${signal} received, flushing pending Supabase writes...`);
+  try{
+    if(supabaseStore.enabled) await Promise.race([supabaseStore.flush(), new Promise(r=>setTimeout(r,20000))]);
+  }catch(e){
+    console.error('[Shutdown] Flush error:',e.message||e);
+  }
+  server.close(()=>process.exit(0));
+  setTimeout(()=>process.exit(0),25000);
+}
+process.on('SIGTERM',()=>gracefulShutdown('SIGTERM'));
+process.on('SIGINT',()=>gracefulShutdown('SIGINT'));
