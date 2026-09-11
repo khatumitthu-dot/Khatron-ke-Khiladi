@@ -1386,4 +1386,41 @@ function fcEscapeMusic(s){
 // musicPlay() itself now lives in music-player.js (window.musicPlay) —
 // it's called from the search results above exactly as before.
 </script>
+<style>
+#ytStorageBadge{position:fixed;left:16px;bottom:16px;z-index:9999;font-size:11px;letter-spacing:.4px;padding:9px 14px;border-radius:10px;display:none;align-items:center;gap:8px;box-shadow:0 10px 24px rgba(0,0,0,.35);font-family:Arial,Helvetica,sans-serif}
+#ytStorageBadge.show{display:inline-flex}
+#ytStorageBadge.ok{background:#0d1f14;color:#7fd88f;border:1px solid #1e4a2c}
+#ytStorageBadge.bad{background:#241012;color:#ff9b9b;border:1px solid #5a1f22}
+#ytStorageBadge b{font-weight:700}
+#ytStorageBadge .dot{width:7px;height:7px;border-radius:50%;background:currentColor}
+</style>
+<script>
+(function(){
+  function tok(){return sessionStorage.getItem('adminToken')||localStorage.getItem('adminToken')||''}
+  async function checkStorage(){
+    var t=tok(); if(!t) return;
+    try{
+      var r=await fetch('/api/admin/storage-status',{headers:{Authorization:'Bearer '+t}});
+      if(!r.ok) return;
+      var d=await r.json();
+      var el=document.getElementById('ytStorageBadge');
+      if(!el){
+        el=document.createElement('div');
+        el.id='ytStorageBadge';
+        document.body.appendChild(el);
+      }
+      el.classList.add('show');
+      if(d.configured){
+        el.className='show ok';
+        el.innerHTML='<span class="dot"></span>Cloud backup connected — orders/products save karne par safe rahenge'+(d.lastError?' <b>(last sync error — check logs)</b>':'');
+      } else {
+        el.className='show bad';
+        el.innerHTML='<span class="dot"></span><b>Cloud backup NOT connected</b> — Supabase env vars set karein, warna updates ke baad orders reset ho sakte hain';
+      }
+    }catch(e){}
+  }
+  checkStorage();
+  setInterval(checkStorage, 15000);
+})();
+</script>
 </body></html>

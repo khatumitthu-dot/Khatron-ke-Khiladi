@@ -206,6 +206,11 @@ async function api(req,res,p){
     if(!auth(req,'admin'))return send(res,401,{error:'Unauthorized'},'application/json',origin);
     audit('notification.test');await saveAndFlush(db);return send(res,200,{ok:true,message:'Notification test recorded. Configure a real provider/webhook to deliver externally.'},'application/json',origin);
   }
+  if(req.method==='GET'&&p==='/api/admin/storage-status'){
+    if(!auth(req,'admin'))return send(res,401,{error:'Unauthorized'},'application/json',origin);
+    const s=supabaseStore.status();
+    return send(res,200,{...s,ordersCount:db.orders.length},'application/json',origin);
+  }
   if(req.method==='POST'&&p==='/api/admin/reset-role'){
     if(!auth(req,'admin'))return send(res,401,{error:'Unauthorized'},'application/json',origin);
     const x=await body(req);if(!verifyAdminPassword(String(x.currentPassword||'')))return send(res,401,{error:'Current password is incorrect'},'application/json',origin);db.settings.role='Super Admin';audit('admin.role.reset');await saveAndFlush(db);return send(res,200,{ok:true,role:'Super Admin'},'application/json',origin);
