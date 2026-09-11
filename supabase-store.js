@@ -202,13 +202,34 @@ async function persistDb(db, initial=false){
   // image, images, sizes, colors, active, featured, created_at, updated_at.
   // Do NOT send UI-only/local fields such as badge, old_price, sections or likes;
   // PostgREST rejects the entire insert/upsert when even one unknown column is sent.
-  const productRows=(d.products||[]).filter(p=>!d.deletedProductIds?.includes(String(p.id))).map(p=>({
+  // The `sku` column has a UNIQUE constraint in Supabase. If two products end up
+  // with the same (or blank) SKU — e.g. an auto-generated default collided, or an
+  // admin left SKU empty on more than one product — the ENTIRE batch upsert used
+  // to fail with a 409 "duplicate key value violates unique constraint
+  // products_sku_key" error, over and over, on every single save (because every
+  // save resends the full product list). Auto-dedupe here so a SKU clash can
+  // never block saving orders/products/settings again.
+  const seenSkus=new Set();
+  const productRows=(d.products||[]).filter(p=>!d.deletedProductIds?.includes(String(p.id))).map(p=>{
+    let sku=String(p.sku||'').trim();
+    if(sku){
+      if(seenSkus.has(sku)){
+        const unique=sku+'-'+String(p.id).replace(/[^a-zA-Z0-9]/g,'').slice(-6);
+        console.warn(`[Supabase] Duplicate SKU "${sku}" on product ${p.id}; auto-renamed to "${unique}" to avoid blocking the save.`);
+        sku=unique;
+        p.sku=unique; // keep local/in-memory data consistent with what was saved
+      }
+      seenSkus.add(sku);
+    } else {
+      sku='';
+    }
+    return {
     id:String(p.id),
     name:String(p.name||''),
     category:p.category||'',
     price:Number(String(p.price||0).replace(/[^0-9.-]/g,''))||0,
     cost:Number(p.cost||0),
-    sku:p.sku||null,
+    sku:sku||null,
     description:p.description||'',
     image:p.image||'',
     images:Array.isArray(p.images)?p.images:[],
@@ -216,7 +237,7 @@ async function persistDb(db, initial=false){
     colors:Array.isArray(p.colors)?p.colors:[],
     active:p.active!==false,
     featured:Boolean(p.featured)
-  }));
+  };});
   const customerRows=(d.users||[]).map(u=>({id:String(u.id),name:String(u.name||''),email:String(u.email||'').toLowerCase(),phone:u.phone||'',password_hash:u.password||null,created_at:u.createdAt||undefined}));
   const orderRows=(d.orders||[]).map(o=>({order_id:String(o.orderId),user_id:o.userId||null,name:o.name||'',email:o.email||'',phone:o.phone||'',address:o.address||'',city:o.city||'',pin:o.pin||'',subtotal:Number(o.subtotal||0),discount:Number(o.discount||0),coupon_code:o.couponCode||'',taxable_subtotal:Number(o.taxableSubtotal||0),gst_rate:Number(o.gstRate||0),gst:Number(o.gst||0),shipping:Number(o.shipping||0),total:Number(o.total||0),payment:o.payment||'cod',status:o.status||'New',verified:Boolean(o.verified),awb:o.awb||'',courier:o.courier||'',tracking_url:o.tracking_url||'',order_date:o.date||undefined}));
   const itemRows=[]; for(const o of d.orders||[]) for(const it of o.items||[]) itemRows.push({order_id:String(o.orderId),product_id:it.productId||null,name:it.name||'',image:it.image||'',sku:it.sku||'',price:Number(String(it.price||0).replace(/[^0-9.-]/g,''))||0,size:it.size||'M',color:it.color||'Black',qty:Number(it.qty||1)});
