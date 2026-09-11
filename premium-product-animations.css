@@ -1,0 +1,193 @@
+/* =========================================================
+   PREMIUM PRODUCT ANIMATIONS — pure black & white
+   Load this AFTER style.css. No gold/accent color anywhere —
+   everything here uses only #000/#fff/greys, matching the
+   existing YOUR TYPE monochrome system.
+   ========================================================= */
+
+@media (prefers-reduced-motion: no-preference){
+
+/* ---------- 1. ENTRANCE: staggered reveal as cards scroll in ---------- */
+.grid .card{
+  opacity: 0;
+  transform: translateY(28px);
+  transition: opacity .6s cubic-bezier(.16,.8,.24,1), transform .6s cubic-bezier(.16,.8,.24,1);
+}
+.grid .card.inView{
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ---------- 2. CARD HOVER: lift + soft glow (no color, just light) ---------- */
+.grid .card{
+  will-change: transform;
+}
+.grid .card .pic{
+  transition: box-shadow .4s ease, transform .5s cubic-bezier(.16,.8,.24,1);
+  transform-style: preserve-3d;
+  perspective: 900px;
+}
+.grid .card:hover .pic{
+  box-shadow: 0 24px 60px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.06);
+}
+
+/* image parallax tilt handled via inline transform from JS (--rx/--ry vars) */
+.grid .pic img{
+  transform: rotateX(var(--ry,0deg)) rotateY(var(--rx,0deg)) scale(var(--zoom,1));
+  transition: transform .5s cubic-bezier(.16,.8,.24,1);
+}
+.grid .card:hover .pic img{ --zoom: 1.09; transition: transform .12s linear; }
+
+/* ---------- 3. BADGE: subtle light sweep ---------- */
+.badge{
+  position:absolute; overflow:hidden;
+}
+.badge::after{
+  content:"";
+  position:absolute; top:0; left:-60%;
+  width:40%; height:100%;
+  background:linear-gradient(115deg, transparent, rgba(255,255,255,.35), transparent);
+  animation: badgeSweep 3.2s ease-in-out infinite;
+}
+@keyframes badgeSweep{
+  0%{ left:-60%; }
+  40%{ left:120%; }
+  100%{ left:120%; }
+}
+
+/* ---------- 4. QUICK VIEW: rises like a drawer with blur ---------- */
+.quick{
+  backdrop-filter: blur(14px) saturate(160%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  transform: translateY(14px);
+  transition: opacity .35s cubic-bezier(.16,.8,.24,1), transform .4s cubic-bezier(.16,.8,.24,1);
+}
+.card:hover .quick{ transform: translateY(0); }
+
+/* ---------- 5. WISHLIST HEART: pop + ring pulse (particles added via JS) ---------- */
+.heart{
+  transition: transform .25s cubic-bezier(.4,0,.2,2.2);
+}
+.heart.heartPopStrong{
+  animation: heartPopStrong .45s cubic-bezier(.4,0,.2,1.6);
+}
+@keyframes heartPopStrong{
+  0%{ transform: scale(1); }
+  35%{ transform: scale(1.5) rotate(-8deg); }
+  60%{ transform: scale(.92); }
+  100%{ transform: scale(1); }
+}
+.heartDot{
+  position:absolute;
+  width:5px; height:5px;
+  border-radius:50%;
+  background:#fff;
+  top:50%; left:50%;
+  pointer-events:none;
+  animation: heartDotFly .6s ease-out forwards;
+}
+@keyframes heartDotFly{
+  to{
+    transform: translate(var(--dx), var(--dy)) scale(0);
+    opacity: 0;
+  }
+}
+
+/* ---------- 6. SIZE CHIPS: smooth select morph ---------- */
+.sizes button, .modalSizes button{
+  position: relative;
+  transition: transform .25s cubic-bezier(.4,0,.2,1.6), background .2s ease, color .2s ease, border-color .2s ease;
+}
+.sizes button:active:not(:disabled), .modalSizes button:active:not(:disabled){
+  transform: scale(.9);
+}
+.sizes button.chosen, .modalSizes button.chosen{
+  animation: sizeChosen .3s ease;
+}
+@keyframes sizeChosen{
+  0%{ transform: scale(1); }
+  50%{ transform: scale(1.18); }
+  100%{ transform: scale(1); }
+}
+
+/* ---------- 7. ADD TO BAG: fill-wipe + checkmark morph ---------- */
+.add{
+  position: relative;
+  overflow: hidden;
+  transition: letter-spacing .3s ease;
+}
+.add span.addLabel{
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.add.justAdded{
+  background:#0d0d0d !important;
+  color:#fff !important;
+  border-color:#0d0d0d !important;
+}
+.add.justAdded::before{
+  content:"";
+  position:absolute; inset:0;
+  background:#fff;
+  transform: scaleX(0);
+  transform-origin: left;
+  animation: addWipe .5s cubic-bezier(.16,.8,.24,1) forwards;
+  z-index: 0;
+}
+@keyframes addWipe{
+  0%{ transform: scaleX(0); }
+  100%{ transform: scaleX(1); opacity: 0; }
+}
+.add.justAdded .addLabel::after{
+  content:" ✓ ADDED";
+}
+.add.justAdded .addLabel{
+  animation: addLabelPop .35s ease;
+}
+@keyframes addLabelPop{
+  0%{ transform: translateY(6px); opacity:.4; }
+  100%{ transform: translateY(0); opacity:1; }
+}
+
+/* ---------- 8. IMAGE SKELETON while loading ---------- */
+.pic.imgLoading{
+  background: linear-gradient(100deg, #0c0c0c 30%, #171717 50%, #0c0c0c 70%);
+  background-size: 200% 100%;
+  animation: skeletonShine 1.4s ease-in-out infinite;
+}
+.pic.imgLoading img{ opacity: 0; }
+@keyframes skeletonShine{
+  0%{ background-position: 200% 0; }
+  100%{ background-position: -200% 0; }
+}
+
+/* ---------- 9. CART ICON bump on add ---------- */
+.bag.cartBump{
+  animation: cartBump .45s cubic-bezier(.4,0,.2,1.6);
+}
+@keyframes cartBump{
+  0%{ transform: scale(1); }
+  40%{ transform: scale(1.28) rotate(-6deg); }
+  70%{ transform: scale(.95); }
+  100%{ transform: scale(1); }
+}
+.bag .cartCount.bump{
+  animation: countBump .4s ease;
+}
+@keyframes countBump{
+  0%{ transform: scale(1); }
+  50%{ transform: scale(1.5); }
+  100%{ transform: scale(1); }
+}
+
+} /* end reduced-motion guard */
+
+/* Reduced-motion fallback: keep functionality, drop decorative motion */
+@media (prefers-reduced-motion: reduce){
+  .grid .card{ opacity: 1; transform: none; }
+  .badge::after, .heartDot, .add.justAdded::before{ display: none; }
+}
