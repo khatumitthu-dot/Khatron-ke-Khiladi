@@ -3,9 +3,11 @@ const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABA
 const SUPABASE_STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'your-type-media';
 const enabled = Boolean(SUPABASE_URL && SUPABASE_KEY);
 
-let writeQueue = Promise.resolve();
 let lastSync = null;
 let lastError = null;
+let pendingDb = null;   // latest live db reference waiting to be saved (not yet cloned)
+let savingNow = false;  // whether a persistDb() call is currently in flight
+let saveWaiters = [];   // callers awaiting the next completed save
 // Some Supabase projects can have a table visible in Table Editor but not exposed
 // through PostgREST. Keep that optional table from blocking the whole store.
 const disabledTables = new Set();
@@ -202,7 +204,15 @@ async function hydrateDb(db, options={}){
     if(siteRows[0]){ const s=siteRows[0]; db.site={hero:s.hero,announcement:s.announcement,sections:s.sections||{},sectionProducts:s.section_products||{},colorPalette:s.color_palette||[],store:s.store||{},content:s.content||{},categories:s.categories||[]}; }
     if(settingsRows[0]){ const s=settingsRows[0]; db.settings={gst:Number(s.gst||0),shipping:Number(s.shipping||0),freeShipping:Number(s.free_shipping||0),gateway:s.gateway||{},courier:s.courier||{},notifications:s.notifications||{},role:s.role||'Super Admin'}; }
     db.deletedProductIds = [...new Set([...(options.preserveDeletedIds||[]).map(String),...deleted.map(x=>String(x.product_id))])];
-    db.sessions = {};
+    // Previously this unconditionally wiped ALL admin/customer login sessions on
+    // every boot (every restart/redeploy — and the app was restarting frequently
+    // due to the OOM crashes). That silently logged the admin out mid-task, which
+    // is why "Add Product" (and other admin actions) started failing with
+    // "Unauthorized" right after a restart even though the panel still looked
+    // logged in. Sessions aren't stored in Supabase, only in the local snapshot
+    // (data.json), so keep whatever was already loaded locally and just drop any
+    // that have naturally expired — don't blank them out on every hydrate.
+    db.sessions = Object.fromEntries(Object.entries(db.sessions||{}).filter(([,s])=>s&&s.expires>Date.now()));
     lastSync = new Date().toISOString(); lastError = null;
     return {enabled:true,source:'supabase',migrated:false};
   }catch(e){
@@ -333,17 +343,43 @@ async function persistDb(db, initial=false){
 
 function queueSave(db){
   if(!enabled) return Promise.resolve({enabled:false});
-  const snapshot=deep(db);
-  // Chain onto writeQueue via .catch(()=>{}) first so that a PRIOR failed save
-  // does not permanently poison every future save (writeQueue must never stay
-  // in a rejected state, or every subsequent queueSave/flush call would also
-  // reject immediately without even attempting to persist).
-  const job=writeQueue.catch(()=>{}).then(()=>persistDb(snapshot,false));
-  writeQueue=job.catch(e=>{lastError=cleanError(e);console.error('[Supabase]',lastError);});
-  return job;
+  // Coalesced write queue: earlier this took an immediate deep-clone snapshot on
+  // EVERY call and chained them one after another. If several saves were triggered
+  // close together (loading the admin panel, adding a product, a settings save,
+  // the 15s storage-status poll, etc.) each call held its own full clone of the
+  // WHOLE database in memory at once until its turn came up — with enough of them
+  // queued, memory usage snowballed and crashed the process (heap out of memory),
+  // which is what kept restarting the panel. Now only the latest db reference is
+  // remembered between runs, and at most ONE deep clone exists in memory at a
+  // time — extra calls that arrive while a save is already running just update
+  // what "latest" points to instead of creating another clone.
+  pendingDb=db;
+  return new Promise(resolve=>{ saveWaiters.push(resolve); runQueue(); });
 }
-
-async function flush(){ return writeQueue; }
-function status(){ return {enabled,configured:enabled,lastSync,lastError,pending:false}; }
+async function runQueue(){
+  if(savingNow) return; // a run is already in progress; it will pick up the latest pendingDb below
+  savingNow=true;
+  try{
+    while(pendingDb){
+      const dbRef=pendingDb; pendingDb=null;
+      const waiters=saveWaiters; saveWaiters=[];
+      const snapshot=deep(dbRef);
+      let result;
+      try{
+        result=await persistDb(snapshot,false);
+      }catch(e){
+        lastError=cleanError(e); console.error('[Supabase]',lastError);
+        result={enabled:true,error:lastError};
+      }
+      waiters.forEach(r=>r(result));
+    }
+  }finally{
+    savingNow=false;
+  }
+}
+async function flush(){
+  while(savingNow||pendingDb) await new Promise(r=>setTimeout(r,50));
+}
+function status(){ return {enabled,configured:enabled,lastSync,lastError,pending:savingNow||Boolean(pendingDb)}; }
 
 module.exports={enabled,hydrateDb,persistDb,queueSave,flush,status,uploadMedia,deleteMedia,deleteWhere,listMedia,publicMediaUrl,migrateLocalUploads,ensureStorageBucket};
