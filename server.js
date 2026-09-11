@@ -51,6 +51,54 @@ db.products.forEach((p,i)=>{if(!p.id)p.id='p_'+crypto.createHash('sha1').update(
 db.products=db.products.filter(p=>!localDeletedProductIds.has(String(p.id)));
 
 
+// --- Static file serving (images/videos/css/js) ---------------------------
+// Previously every static file (including the 13MB header/newsletter videos)
+// was read FULLY into memory with fs.readFileSync() on every single request,
+// and every response forced 'Cache-Control: no-store' so browsers re-downloaded
+// the same large files on every page load. On a 512MB instance, a few
+// concurrent visitors loading the homepage (26MB+ of video each, uncached)
+// was enough to exhaust the heap and crash the process. This block streams
+// files from disk (no full in-memory buffering), supports HTTP Range requests
+// (so video players can seek and browsers can resume/partial-fetch), and
+// lets the browser cache immutable assets (images/videos/css/js) instead of
+// re-fetching them on every load. HTML stays 'no-store' since admin edits
+// site content and pages must always reflect the latest data.
+const CACHEABLE_EXT=new Set(['.css','.js']);
+const LONG_CACHE_EXT=new Set(['.jpg','.jpeg','.png','.webp','.mp4','.webm']);
+function etagFor(stat){return '"'+stat.size.toString(16)+'-'+Math.floor(stat.mtimeMs).toString(16)+'"'}
+function cacheControlFor(ext){
+  if(LONG_CACHE_EXT.has(ext))return 'public, max-age=604800, immutable'; // 7 days — media
+  if(CACHEABLE_EXT.has(ext))return 'public, max-age=3600'; // 1 hour — css/js
+  return 'no-store'; // html and everything else
+}
+function serveFile(req,res,file){
+  let stat;
+  try{stat=fs.statSync(file)}catch{return send(res,404,'Not found','text/plain')}
+  if(stat.isDirectory())return send(res,404,'Not found','text/plain');
+  const ext=path.extname(file).toLowerCase();
+  const type=mime[ext]||'application/octet-stream';
+  const etag=etagFor(stat);
+  const headers={'Content-Type':type,'Cache-Control':cacheControlFor(ext),'X-Content-Type-Options':'nosniff'};
+  if(ext!=='.html'){headers['ETag']=etag;headers['Last-Modified']=stat.mtime.toUTCString();headers['Accept-Ranges']='bytes'}
+  const inm=req.headers['if-none-match'];
+  if(inm&&inm===etag){res.writeHead(304,headers);return res.end()}
+  const range=req.headers.range;
+  if(range&&ext!=='.html'){
+    const m=/bytes=(\d*)-(\d*)/.exec(range);
+    if(m&&(m[1]||m[2])){
+      let start=m[1]?parseInt(m[1],10):0,end=m[2]?parseInt(m[2],10):stat.size-1;
+      if(isNaN(start))start=0; if(isNaN(end)||end>=stat.size)end=stat.size-1;
+      if(start>end||start>=stat.size){res.writeHead(416,{...headers,'Content-Range':'bytes */'+stat.size});return res.end()}
+      headers['Content-Range']=`bytes ${start}-${end}/${stat.size}`;headers['Content-Length']=end-start+1;
+      res.writeHead(206,headers);
+      fs.createReadStream(file,{start,end}).pipe(res);
+      return;
+    }
+  }
+  headers['Content-Length']=stat.size;
+  res.writeHead(200,headers);
+  fs.createReadStream(file).on('error',()=>res.end()).pipe(res);
+}
 function hash(s){return crypto.createHash('sha256').update(String(s)).digest('hex')}
 function originFor(req){const o=req.headers.origin||'';return o&&o===('http://'+req.headers.host)?o:''}
 function send(res,status,data,type='application/json',origin=''){const h={'Content-Type':type,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','X-Frame-Options':'SAMEORIGIN','Referrer-Policy':'strict-origin-when-cross-origin','Permissions-Policy':'camera=(), microphone=(), geolocation=()','Content-Security-Policy':"default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; img-src 'self' https: data: blob:; media-src 'self' https: data: blob:",'Access-Control-Allow-Headers':'Content-Type, Authorization','Access-Control-Allow-Methods':'GET,POST,PATCH,DELETE,OPTIONS'};if(origin)h['Access-Control-Allow-Origin']=origin;res.writeHead(status,h);res.end(type==='application/json'?JSON.stringify(data):data)}
@@ -162,7 +210,7 @@ async function api(req,res,p){
    await saveAndFlush(db);
    return send(res,201,{ok:true,filename,url,type:m[1],size:buf.length,persistent:Boolean(supabaseStore.enabled)},'application/json',origin);
   }
-  if(req.method==='GET'&&p.startsWith('/uploads/')){const filename=path.basename(decodeURIComponent(p.slice('/uploads/'.length))),file=path.join(UPLOADS,filename);if(!fs.existsSync(file)||fs.statSync(file).isDirectory())return send(res,404,'Not found','text/plain',origin);return send(res,200,fs.readFileSync(file),mime[path.extname(file).toLowerCase()]||'application/octet-stream',origin)}
+  if(req.method==='GET'&&p.startsWith('/uploads/')){const filename=path.basename(decodeURIComponent(p.slice('/uploads/'.length))),file=path.join(UPLOADS,filename);return serveFile(req,res,file)}
 
   if(req.method==='POST'&&p==='/api/admin/products'){if(!auth(req,'admin'))return send(res,401,{error:'Unauthorized'},'application/json',origin);const x=await body(req);const image=String(x.image||((x.images||[])[0]||''));if(!String(x.name||'').trim()||priceNumber(x.price)<=0||!image)return send(res,400,{error:'Name, price and image are required'},'application/json',origin);if(oversizedDataUri(image)||(Array.isArray(x.images)&&x.images.some(oversizedDataUri)))return send(res,400,{error:'Image/video data too large to save inline — please upload it via Media first'},'application/json',origin);const pr=safeProduct({...x,id:'p_'+crypto.randomBytes(6).toString('hex'),image,sizes:cleanSizes(x.sizes)});db.products.push(pr);audit('product.create',{id:pr.id});await saveAndFlush(db);return send(res,201,pr,'application/json',origin)}
   if(req.method==='PATCH'&&p.startsWith('/api/admin/products/')){if(!auth(req,'admin'))return send(res,401,{error:'Unauthorized'},'application/json',origin);const id=decodeURIComponent(p.slice('/api/admin/products/'.length)),x=await body(req),i=db.products.findIndex(v=>String(v.id)===id);if(i<0)return send(res,404,{error:'Product not found'},'application/json',origin);const current=db.products[i],merged={...current,...x,id:current.id,image:String(x.image||((Array.isArray(x.images)&&x.images[0])||current.image)),sizes:x.sizes?cleanSizes(x.sizes):cleanSizes(current.sizes)};if(!merged.name||priceNumber(merged.price)<=0||!merged.image)return send(res,400,{error:'Name, price and image are required'},'application/json',origin);if(oversizedDataUri(merged.image)||(Array.isArray(merged.images)&&merged.images.some(oversizedDataUri)))return send(res,400,{error:'Image/video data too large to save inline — please upload it via Media first'},'application/json',origin);db.products[i]=safeProduct(merged);audit('product.update',{id});await saveAndFlush(db);return send(res,200,db.products[i],'application/json',origin)}
@@ -235,8 +283,8 @@ const server=http.createServer(async(req,res)=>{
  const u=new URL(req.url,'http://localhost'),p=u.pathname;
  if(p.startsWith('/api/')||p.startsWith('/uploads/'))return api(req,res,p);
  const file=path.normalize(path.join(ROOT,p==='/'?'index.html':p));
- if(!file.startsWith(ROOT)||!fs.existsSync(file)||fs.statSync(file).isDirectory())return send(res,404,'Not found','text/plain');
- try{const ext=path.extname(file).toLowerCase();res.writeHead(200,{'Content-Type':mime[ext]||'application/octet-stream','Cache-Control':'no-store'});res.end(fs.readFileSync(file))}catch{send(res,404,'Not found','text/plain')}
+ if(!file.startsWith(ROOT))return send(res,404,'Not found','text/plain');
+ return serveFile(req,res,file);
 });
 async function bootstrap(){
   try{
