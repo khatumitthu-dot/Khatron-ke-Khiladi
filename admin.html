@@ -736,11 +736,122 @@ function downloadManual(){downloadText('YOUR_TYPE_STORE_MANUAL.txt','YOUR TYPE S
 function pdfSafe(s){return String(s).replace(/₹/g,'Rs. ').replace(/[—–]/g,'-').replace(/[""]/g,'"').replace(/['']/g,"'").replace(/[()\\]/g,'').replace(/[^\x20-\x7e]/g,'?')}
 function makePdf(titleLine,bodyLines){let stream='BT /F1 16 Tf 72 790 Td ('+pdfSafe(titleLine)+') Tj 0 -26 TD /F1 11 Tf '+bodyLines.map(l=>l===''?'0 -14 TD':`(${pdfSafe(l)}) Tj 0 -16 TD`).join(' ')+' ET';let objs=['<< /Type /Catalog /Pages 2 0 R >>','<< /Type /Pages /Kids [3 0 R] /Count 1 >>','<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>',`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'];let pdf='%PDF-1.4\n',offsets=[0];objs.forEach((o,i)=>{offsets.push(pdf.length);pdf+=`${i+1} 0 obj\n${o}\nendobj\n`});let xrefStart=pdf.length;pdf+=`xref\n0 ${objs.length+1}\n0000000000 65535 f \n`;for(let i=1;i<=objs.length;i++)pdf+=String(offsets[i]).padStart(10,'0')+' 00000 n \n';pdf+=`trailer\n<< /Size ${objs.length+1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`;return pdf}
 function downloadPDF(){let bodyLines=state.products.map(p=>`${p.name} — ${money(p.price)} — SKU ${p.sku}`);downloadText('YOUR_TYPE_PRODUCT_BROCHURE.pdf',makePdf('YOUR TYPE — Product Brochure',bodyLines),'application/pdf')}
-function addressSlip(id){let o=state.orders.find(x=>x.id===id);if(!o){toast('Order not found');return}let p=prod(o.productId);let bodyLines=['Order: '+o.id,'Date: '+o.date,'',
-'BILL TO / SHIP TO',o.customer,...o.address.split('\n'),'Phone: '+o.phone,'',
-'PRODUCT DETAILS',`${p?.name||'Deleted Product'}  (SKU ${p?.sku||'—'})`,`Size: ${o.size}   Qty: ${o.qty}`,`Unit Price: ${money(o.price)}   Total: ${money(o.price*o.qty)}`,`Payment: ${o.payment}   Status: ${o.status}`,
-o.awb?`AWB: ${o.awb}${o.courier?' ('+o.courier+')':''}`:''].filter(l=>l!=='');
-downloadText('YOUR_TYPE_ADDRESS_SLIP_'+id.replace('#','')+'.pdf',makePdf('YOUR TYPE — Address / Packing Slip',bodyLines),'application/pdf')}
+function packingPdfSafe(s){return String(s??'').replace(/₹/g,'Rs. ').replace(/[—–]/g,'-').replace(/[""]/g,'"').replace(/['']/g,"'").replace(/[()\\]/g,'').replace(/[^\x20-\x7e]/g,'?')}
+function packingPdfText(s){return '('+packingPdfSafe(s)+') Tj'}
+function packingPdfWrap(s,max=76){let words=String(s??'').trim().split(/\s+/).filter(Boolean),out=[],line='';words.forEach(w=>{if((line+' '+w).trim().length>max){if(line)out.push(line);line=w}else line=(line+' '+w).trim()});if(line)out.push(line);return out.length?out:['—']}
+function makePackingSlipPdf(o,p){
+  const pageW=595,pageH=842,left=42,right=553,ink='0 0 0',muted='0.38 0.38 0.38',line='0.84 0.84 0.84',soft='0.96 0.96 0.96';
+  let c=[];
+  const txt=(x,y,s,size=10,font='F1',color=ink)=>{c.push(`${color} rg BT /${font} ${size} Tf ${x} ${y} Td ${packingPdfText(s)} ET`)};
+  const rect=(x,y,w,h,fill=null,stroke=null,lw=1)=>{if(fill)c.push(`${fill} rg ${x} ${y} ${w} ${h} re f`);if(stroke)c.push(`${stroke} RG ${lw} w ${x} ${y} ${w} ${h} re S`)};
+  const rule=(x1,y1,x2,y2,lw=0.7,color=line)=>c.push(`${color} RG ${lw} w ${x1} ${y1} m ${x2} ${y2} l S`);
+  const moneyPdf=v=>packingPdfSafe(money(Number(v)||0));
+  const orderId=packingPdfSafe(o.id||'—');
+  const orderDate=packingPdfSafe(o.date||'—');
+  const customer=packingPdfWrap(o.customer||'—',38);
+  const addr=packingPdfWrap(o.address||'—',55);
+  const phone=packingPdfSafe(o.phone||'—');
+  const productName=packingPdfSafe(p?.name||o.items?.[0]?.name||'Product');
+  const sku=packingPdfSafe(p?.sku||o.items?.[0]?.sku||'—');
+  const size=packingPdfSafe(o.size||o.items?.[0]?.size||'—');
+  const qty=Math.max(1,Number(o.qty||o.items?.[0]?.qty)||1);
+  const unit=Number(o.price??o.items?.[0]?.price)||0;
+  const productTotal=unit*qty;
+  const discount=Number(o.discount||0);
+  const shipping=Number(o.shipping||0);
+  const grand=Math.max(0,Number.isFinite(Number(o.total))?Number(o.total):productTotal-discount+shipping);
+  const status=packingPdfSafe(o.status||'New');
+  const payment=packingPdfSafe(o.payment||'COD');
+  let y=800;
+
+  rect(left,755,right-left,55,'0.06 0.06 0.06',null);
+  txt(left+18,787,'YOUR TYPE',20,'F2','1 1 1');
+  txt(left+18,771,'OFFICIAL PACKING SLIP',8,'F1','0.75 0.75 0.75');
+  txt(420,787,'ORDER',7,'F2','0.65 0.65 0.65');
+  txt(420,771,orderId,10,'F2','1 1 1');
+
+  txt(left,731,'ORDER INFORMATION',9,'F2');
+  rect(left,677,right-left,43,soft,line);
+  txt(left+12,703,'Order date',7,'F2',muted); txt(left+12,687,orderDate,10);
+  txt(220,703,'Payment',7,'F2',muted); txt(220,687,payment,10);
+  txt(360,703,'Status',7,'F2',muted); txt(360,687,status,10,'F2');
+
+  txt(left,653,'BILL TO / SHIP TO',9,'F2');
+  const boxY=558,boxH=82,mid=297;
+  rect(left,boxY,242,boxH,null,line); rect(mid+10,boxY,246,boxH,null,line);
+  txt(left+12,623,'CUSTOMER',7,'F2',muted);
+  let cy=607; customer.forEach((s,i)=>{txt(left+12,cy,s,i===0?11:9,i===0?'F2':'F1');cy-=13});
+  txt(left+12,568,'PHONE  '+phone,8,'F1',muted);
+  txt(mid+22,623,'DELIVERY ADDRESS',7,'F2',muted);
+  let ay=607; addr.slice(0,5).forEach(s=>{txt(mid+22,ay,s,9);ay-=12});
+  if(addr.length>5)txt(mid+22,568,'…',9,'F1',muted);
+
+  txt(left,534,'ITEM DETAILS',9,'F2');
+  const tableTop=516,rowH=45;
+  rect(left,tableTop-22,right-left,22,'0.10 0.10 0.10',null);
+  txt(left+10,tableTop-15,'PRODUCT',8,'F2','1 1 1');
+  txt(305,tableTop-15,'SIZE',8,'F2','1 1 1');
+  txt(360,tableTop-15,'QTY',8,'F2','1 1 1');
+  txt(410,tableTop-15,'UNIT PRICE',8,'F2','1 1 1');
+  txt(495,tableTop-15,'TOTAL',8,'F2','1 1 1');
+  rect(left,tableTop-22-rowH,right-left,rowH,null,line);
+  let pn=packingPdfWrap(productName+'  |  SKU '+sku,43);
+  txt(left+10,tableTop-40,pn[0],9,'F2');
+  if(pn[1])txt(left+10,tableTop-52,pn[1],8,'F1',muted);
+  txt(305,tableTop-48,size,9);
+  txt(360,tableTop-48,String(qty),9);
+  txt(410,tableTop-48,moneyPdf(unit),9);
+  txt(495,tableTop-48,moneyPdf(productTotal),9,'F2');
+
+  let sumY=418;
+  rule(340,sumY+12,right,sumY+12);
+  txt(350,sumY,'Subtotal',9,'F1',muted); txt(495,sumY,moneyPdf(productTotal),9);
+  sumY-=18;
+  if(discount){txt(350,sumY,'Discount',9,'F1',muted);txt(495,sumY,'- '+moneyPdf(discount),9);sumY-=18}
+  if(shipping){txt(350,sumY,'Shipping',9,'F1',muted);txt(495,sumY,moneyPdf(shipping),9);sumY-=18}
+  rule(340,sumY+8,right,sumY+8,1,'0.15 0.15 0.15');
+  txt(350,sumY-11,'GRAND TOTAL',11,'F2');txt(488,sumY-11,moneyPdf(grand),12,'F2');
+
+  let infoY=325;
+  rect(left,infoY,511,66,soft,line);
+  txt(left+12,infoY+48,'FULFILMENT',8,'F2',muted);
+  txt(left+12,infoY+30,'Payment: '+payment,9,'F1');
+  txt(215,infoY+30,'Status: '+status,9,'F1');
+  if(o.awb)txt(left+12,infoY+13,'AWB: '+packingPdfSafe(o.awb)+(o.courier?'  •  '+packingPdfSafe(o.courier):''),8,'F1',muted);
+  else txt(left+12,infoY+13,'AWB / Courier: To be updated by admin',8,'F1',muted);
+
+  txt(left,287,'PACKING NOTE',8,'F2',muted);
+  txt(left,269,'Please verify the product, size, quantity and delivery address before dispatch.',9);
+  txt(left,255,'Keep this slip with the shipment for internal fulfilment reference.',9,'F1',muted);
+
+  rule(left,78,right,78);
+  txt(left,58,'YOUR TYPE  •  PACKED WITH CARE',8,'F2',muted);
+  txt(430,58,'Order '+orderId,8,'F1',muted);
+
+  let stream=c.join('\n');
+  let objs=[
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 5 0 R /F2 6 0 R >> >> /Contents 4 0 R >>',
+    `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>'
+  ];
+  let pdf='%PDF-1.4\n',offsets=[0];
+  objs.forEach((obj,i)=>{offsets.push(pdf.length);pdf+=`${i+1} 0 obj\n${obj}\nendobj\n`});
+  let xref=pdf.length;
+  pdf+=`xref\n0 ${objs.length+1}\n0000000000 65535 f \n`;
+  for(let i=1;i<=objs.length;i++)pdf+=String(offsets[i]).padStart(10,'0')+' 00000 n \n';
+  pdf+=`trailer\n<< /Size ${objs.length+1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  return pdf;
+}
+function addressSlip(id){
+  let o=state.orders.find(x=>x.id===id);
+  if(!o){toast('Order not found');return}
+  let p=prod(o.productId);
+  let pdf=makePackingSlipPdf(o,p);
+  downloadText('YOUR_TYPE_ADDRESS_SLIP_'+String(id).replace('#','')+'.pdf',pdf,'application/pdf');
+}
 function backup(){downloadText('YOUR_TYPE_BACKUP.json',JSON.stringify(state,null,2),'application/json')}
 function restore(){openModal(`<h2>Restore Data</h2><input type=file id=restoreFile accept=".json"><button class=btn primary onclick="doRestore()">Restore</button>`)}
 function doRestore(){let f=restoreFile.files[0];if(!f){toast('Choose backup file');return}let r=new FileReader();r.onload=()=>{try{state=JSON.parse(r.result);save();closeModal();location.reload()}catch(e){toast('Invalid backup')}};r.readAsText(f)}
