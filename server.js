@@ -130,7 +130,7 @@ async function api(req,res,p){
     }
     discount=Math.round(subtotal*Number(c.value||0)/100);if(Number(c.maxDiscount||0)>0)discount=Math.min(discount,Number(c.maxDiscount));discount=Math.min(discount,subtotal);appliedCoupon=c.code;
    }
-   const taxableSubtotal=Math.max(0,subtotal-discount),gstRate=Number(db.settings.gst||0),gst=Math.round(taxableSubtotal*gstRate/100),total=taxableSubtotal+shipping,id=orderId();
+   const taxableSubtotal=Math.max(0,subtotal-discount),gstRate=Number(db.settings.gst||0),gst=Math.round(taxableSubtotal*gstRate/100),total=taxableSubtotal+gst+shipping,id=orderId();
    const order={name:String(x.name).trim(),email:String(x.email).trim().toLowerCase(),phone:String(x.phone).trim(),address:String(x.address).trim(),city:String(x.city||'').trim(),pin:String(x.pin),items:requested,subtotal,discount,couponCode:appliedCoupon,taxableSubtotal,gstRate,gst,shipping,total,payment:String(x.payment||'cod').toLowerCase(),orderId:id,status:'New',date:new Date().toISOString(),userId:customer?.userId||null,verified:false,awb:'',courier:'',tracking_url:''};
    try{
     if(appliedCoupon){
@@ -158,6 +158,12 @@ async function api(req,res,p){
 
   if(req.method==='GET'&&p==='/api/admin/data'){if(!auth(req,'admin'))return send(res,401,{error:'Unauthorized'},'application/json',origin);return send(res,200,{orders:db.orders,newsletter:db.newsletter,products:db.products.map(safeProduct),users:db.users.map(u=>({id:u.id,name:u.name,email:u.email,phone:u.phone||'',createdAt:u.createdAt})),reviews:db.reviews,coupons:db.coupons,returns:db.returns,notifications:db.notifications,audit:db.audit,settings:db.settings,site:db.site},'application/json',origin)}
   if(req.method==='GET'&&p==='/api/admin/settings'){if(!auth(req,'admin'))return send(res,401,{error:'Unauthorized'},'application/json',origin);return send(res,200,{settings:db.settings},'application/json',origin)}
+  if(req.method==='GET'&&p==='/api/admin/db-status'){
+   if(!auth(req,'admin'))return send(res,401,{error:'Unauthorized'},'application/json',origin);
+   if(!supabaseStore.enabled)return send(res,200,{enabled:false,connected:false,message:'Supabase not configured — running on local data.json'},'application/json',origin);
+   const result=await supabaseStore.ping();
+   return send(res,200,result,'application/json',origin);
+  }
   if(req.method==='PATCH'&&p==='/api/admin/settings'){if(!auth(req,'admin'))return send(res,401,{error:'Unauthorized'},'application/json',origin);const x=await body(req);db.settings={...db.settings,...x};audit('settings.update');save(db);return send(res,200,{ok:true,settings:db.settings},'application/json',origin)}
 
   if(req.method==='PATCH'&&p.startsWith('/api/admin/orders/')){if(!auth(req,'admin'))return send(res,401,{error:'Unauthorized'},'application/json',origin);const id=decodeURIComponent(p.slice('/api/admin/orders/'.length)),x=await body(req),o=db.orders.find(v=>v.orderId===id);if(!o)return send(res,404,{error:'Order not found'},'application/json',origin);if(x.status!==undefined&&!STATUSES.includes(x.status))return send(res,400,{error:'Invalid order status'},'application/json',origin);for(const k of ['status','awb','courier','tracking_url','verified'])if(x[k]!==undefined)o[k]=x[k];audit('order.update',{orderId:id,fields:Object.keys(x)});await saveAndFlush(db);return send(res,200,o,'application/json',origin)}

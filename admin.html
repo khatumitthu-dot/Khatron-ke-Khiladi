@@ -265,7 +265,10 @@ button:active,.btn:active,.yt-quick-card:active{transform:scale(.97)!important}
 <div id="ytPremiumAdminNav" class="yt-admin-shell" style="display:none">
   <div class="yt-admin-top">
     <div><div class="yt-kicker">YOUR TYPE / ADMIN SYSTEM</div><div class="yt-title">Control your store.</div><div class="yt-sub">Everything important, organised in simple sections.</div></div>
-    <div class="yt-status" id="ytNavStatus">● Admin mode</div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <div class="yt-status" id="ytNavStatus">● Admin mode</div>
+      <div class="yt-status" id="ytDbStatus" title="Checks whether the store is connected to its database">⏳ Checking database…</div>
+    </div>
   </div>
   <div class="yt-home-actions">
     <button class="btn primary" onclick="ytNavGo('dashboard',this)">⌂ Dashboard</button>
@@ -619,7 +622,7 @@ function newOrder(id){let p=prod(id),size=bs.value,qty=Math.max(1,+bq2.value||1)
 function orderCard(o){let p=prod(o.productId);return `<div class=order><div style="display:flex;justify-content:space-between"><b>${o.id}</b><span class=pill>${o.status}</span></div><div class=orderbody><div class=orderimg>YT</div><div><b>${p?.name||'Deleted Product'}</b><br>SKU: ${p?.sku||'—'}<br>Size: <b>${o.size||'—'}</b> · Color: <b>${o.color||'—'}</b> · Qty: <b>${o.qty||1}</b><br>Unit: ${money(o.price)} · Total: <b>${money(o.price*o.qty)}</b><br>Payment: ${o.payment}<br><span class=muted>${o.customer} · ${o.phone}<br>${o.date}</span></div></div><h3>Delivery Address</h3><div class=address>${o.customer}
 ${o.address}
 📞 ${o.phone}</div><p class=small>${o.verified?'✓ Address verified':'⚠ Address pending verification'}</p>${o.awb?`<p class=muted>AWB: <b>${o.awb}</b>${o.tracking_url?` · <a href="${o.tracking_url}" target="_blank" style="color:#fff">Track Shipment</a>`:''}</p>`:''}<div class=timeline>${['Confirmed','Packed','Shipped','Out for Delivery','Delivered'].map((x,i)=>`<div class="step ${['Confirmed','Packed','Shipped','Out for Delivery','Delivered'].indexOf(o.status)>=i?'done':''}">${x}</div>`).join('')}</div>
-<button class="btn good" onclick="setOrderStatus('${o.id}','Packed')">Packed</button><button class="btn" onclick="setOrderStatus('${o.id}','Shipped')">Shipped</button><button class="btn" onclick="setOrderStatus('${o.id}','Out for Delivery')">Out for Delivery</button><button class="btn primary" onclick="setOrderStatus('${o.id}','Delivered')">Delivered</button><button class="btn" onclick="verify('${o.id}')">Verify Address</button><button class="btn" onclick="shipment('${o.id}')">AWB / Tracking</button><button class="btn" onclick="invoiceById('${o.id}')">Invoice</button><button class="btn" onclick="addressSlip('${o.id}')">📄 Address / Packing Slip (PDF)</button><button class="btn danger" onclick="cancelOrder('${o.id}')">Cancel</button><br><br><button class=btn onclick="details('${o.id}')">Full Details</button></div>`}
+<button class="btn${o.status==='Packed'?' primary':''}" onclick="setOrderStatus('${o.id}','Packed')">Packed</button><button class="btn${o.status==='Shipped'?' primary':''}" onclick="setOrderStatus('${o.id}','Shipped')">Shipped</button><button class="btn${o.status==='Out for Delivery'?' primary':''}" onclick="setOrderStatus('${o.id}','Out for Delivery')">Out for Delivery</button><button class="btn${o.status==='Delivered'?' primary':''}" onclick="setOrderStatus('${o.id}','Delivered')">Delivered</button><button class="btn" onclick="verify('${o.id}')">Verify Address</button><button class="btn" onclick="shipment('${o.id}')">AWB / Tracking</button><button class="btn" onclick="invoiceById('${o.id}')">Invoice</button><button class="btn" onclick="addressSlip('${o.id}')">📄 Address / Packing Slip (PDF)</button><button class="btn danger" onclick="cancelOrder('${o.id}')">Cancel</button><br><br><button class=btn onclick="details('${o.id}')">Full Details</button></div>`}
 function renderOrders(q=''){let a=state.orders.filter(o=>(o.id+o.customer+(prod(o.productId)?.name||'')).toLowerCase().includes(q.toLowerCase()));ordersList.innerHTML=a.length?a.map(orderCard).join(''):'<p class=muted>No matching orders.</p>'}
 function renderCustomerOrders(){customerOrderList.innerHTML=state.orders.map(orderCard).join('')}
 function setOrderStatus(id,s){let o=state.orders.find(x=>x.id===id);if(o){o.status=s;save();renderOrders();renderCustomerOrders();updateDash();toast('Order status: '+s)}}
@@ -835,18 +838,44 @@ async function restoreServerBackup(){
     return o;
   }
 
+  let dupFlags={phoneToNames:new Map(),nameToPhones:new Map()};
+  function computeDupFlags(){
+    const phoneToNames=new Map(),nameToPhones=new Map();
+    (state.orders||[]).forEach(o=>{
+      const phone=String(o.phone||'').replace(/\D/g,'');
+      const name=String(o.customer||'').trim().toLowerCase();
+      if(phone&&name){
+        if(!phoneToNames.has(phone))phoneToNames.set(phone,new Set());
+        phoneToNames.get(phone).add(name);
+        if(!nameToPhones.has(name))nameToPhones.set(name,new Set());
+        nameToPhones.get(name).add(phone);
+      }
+    });
+    dupFlags={phoneToNames,nameToPhones};
+  }
+  window.duplicateCustomerWarning=function(o){
+    const phone=String(o.phone||'').replace(/\D/g,''),name=String(o.customer||'').trim().toLowerCase();
+    if(!phone||!name)return '';
+    const dupPhone=(dupFlags.phoneToNames.get(phone)?.size||0)>1;
+    const dupName=(dupFlags.nameToPhones.get(name)?.size||0)>1;
+    if(!dupPhone&&!dupName)return '';
+    const reason=dupPhone?'this phone number is linked to more than one customer name':'this customer name is linked to more than one phone number';
+    return `<div style="margin:10px 0;padding:9px 12px;border-radius:8px;background:#3a2a00;border:1px solid #9a6a00;color:#ffcf7a;font-size:11px;font-weight:700;line-height:1.5">⚠ Possible duplicate customer — ${reason}. Double-check before allowing a coupon to be reused.</div>`;
+  };
+
   async function sync(){
     const d=await fcServer('/api/admin/data');
     const products=Array.isArray(d.products)?d.products:[];state.products=products.map(localProduct);
     state.inventory=[];products.forEach(p=>Object.entries(p.sizes||{}).forEach(([sz,n])=>state.inventory.push([String(p.id),sz,Math.max(0,num(n)),5])));
     state.orders=(Array.isArray(d.orders)?d.orders:[]).map(localOrder);
+    computeDupFlags();
     state.coupons=Array.isArray(d.coupons)?d.coupons.map(c=>({id:c.id,code:c.code,percent:c.type==='percent'?num(c.value):0,min:num(c.minOrder),expiry:c.expiresAt?String(c.expiresAt).slice(0,10):'',active:c.active!==false,type:c.type||'percent',value:num(c.value)})):[];
     state.reviews=d.reviews||[];state.newsletter=d.newsletter||[];state.returns=d.returns||[];state.notifications=d.notifications||[];state.audit=d.audit||[];state.settings=d.settings||state.settings||{};
     try{const sd=await fetch('/api/site-config',{cache:'no-store'}).then(r=>r.json());const site=sd.site||{};state.website=Object.assign({},state.website||{},site);if(Array.isArray(site.categories))state.categories=site.categories.slice();state.sectionSettings=site.sections||state.sectionSettings}catch(_){}
     save();renderProducts(productSearch?.value||'');renderInventory();if(typeof renderVariantManager==='function')renderVariantManager();if(typeof renderSectionManager==='function')renderSectionManager();if(typeof syncColorManager==='function')syncColorManager();renderCoupons();renderOrders();if(typeof renderCustomerOrders==='function')renderCustomerOrders();filterStore('all');updateDash();
   }
 
-  window.doAdminLogin=async function(){const u=String(document.getElementById('loginUser')?.value||'').trim(),pw=String(document.getElementById('loginPass')?.value||'');if(!u||!pw){toast('Enter username and password');return}try{const x=await api2('/api/admin/login',{method:'POST',body:JSON.stringify({username:u,password:pw})});setAdminToken(x.token);closeModal();await sync();go('dashboard');toast('Connected to website database')}catch(e){toast(e.message||'Login failed')}};
+  window.doAdminLogin=async function(){const u=String(document.getElementById('loginUser')?.value||'').trim(),pw=String(document.getElementById('loginPass')?.value||'');if(!u||!pw){toast('Enter username and password');return}try{const x=await api2('/api/admin/login',{method:'POST',body:JSON.stringify({username:u,password:pw})});setAdminToken(x.token);closeModal();await sync();if(window.checkDbStatus)window.checkDbStatus();go('dashboard');toast('Connected to website database')}catch(e){toast(e.message||'Login failed')}};
 
   window.renderOrders=function(q=''){const term=String(q||'').toLowerCase();const a=state.orders.filter(o=>(o.id+' '+o.customer+' '+(productById(o.productId)?.name||'')).toLowerCase().includes(term));ordersList.innerHTML=a.length?a.map(orderCard).join(''):'<p class="muted">No matching orders.</p>';};
   window.renderCustomerOrders=function(){customerOrderList.innerHTML=state.orders.length?state.orders.map(orderCard).join(''):'<p class="muted">No orders yet.</p>';};
@@ -877,10 +906,37 @@ async function restoreServerBackup(){
   window.newOrder=async function(id){const p=productById(id),size=document.getElementById('bs')?.value,qty=Math.max(1,num(document.getElementById('bq2')?.value)),customer=(document.getElementById('bcustomer')?.value||'').trim(),phone=(document.getElementById('bphone')?.value||'').trim(),address=(document.getElementById('baddress')?.value||'').trim();if(!p||!size){toast('Select a product and size');return}if(!customer||!phone||!address){toast('Customer, phone and address are required');return}const m=address.match(/(?:^|\n)\s*(?:.*?)(?:-|—)\s*(\d{6})\s*$/);const pin=m?m[1]:(address.match(/\b\d{6}\b/)||[])[0]||'';try{await api2('/api/orders',{method:'POST',body:JSON.stringify({name:customer,email:'admin-order@yourtype.local',phone,address,city:'',pin,items:[{name:p.name,image:p.image,size,qty}]})});await sync();closeModal();go('orders');toast('Order placed on website')}catch(e){toast(e.message)}};
 
   // Render order cards with server-shape-safe data, avoiding undefined/NaN.
-  window.orderCard=function(o){const p=productById(o.productId),qty=Math.max(1,num(o.qty)),price=num(o.price),imgProduct=p||{name:o.items?.[0]?.name||'Product',image:o.image||o.items?.[0]?.image||'',images:o.image||o.items?.[0]?.image?[o.image||o.items?.[0]?.image]:[]};return `<div class="order"><div style="display:flex;justify-content:space-between"><b>${esc(o.id||'—')}</b><span class="pill">${esc(o.status||'New')}</span></div><div class="orderbody"><div class="orderimg">${picHtml(imgProduct)}</div><div><b>${esc(p?.name||'Product')}</b><br>SKU: ${esc(p?.sku||'—')}<br>Size: <b>${esc(o.size||'—')}</b> · Color: <b>${esc(o.color||'—')}</b> · Qty: <b>${qty}</b><br>Unit: ${money(price)} · Total: <b>${money(price*qty)}</b><br>Payment: ${esc(o.payment||'COD')}<br><span class="muted">${esc(o.customer||'—')} · ${esc(o.phone||'—')}<br>${esc(o.date||'—')}</span></div></div><h3>Delivery Address</h3><div class="address">${esc(o.customer||'—')}\n${esc(o.address||'—')}\n📞 ${esc(o.phone||'—')}</div><p class="small">${o.verified?'✓ Address verified':'⚠ Address pending verification'}</p>${o.awb?`<p class="muted">AWB: <b>${esc(o.awb)}</b>${o.tracking_url?` · <a href="${esc(o.tracking_url)}" target="_blank" rel="noopener" style="color:#fff">Track Shipment</a>`:''}</p>`:''}<div class="timeline">${['Confirmed','Packed','Shipped','Out for Delivery','Delivered'].map((x,i)=>`<div class="step ${['Confirmed','Packed','Shipped','Out for Delivery','Delivered'].indexOf(o.status)>=i?'done':''}">${x}</div>`).join('')}</div><button class="btn good" onclick="setOrderStatus('${esc(o.id)}','Packed')">Packed</button><button class="btn" onclick="setOrderStatus('${esc(o.id)}','Shipped')">Shipped</button><button class="btn" onclick="setOrderStatus('${esc(o.id)}','Out for Delivery')">Out for Delivery</button><button class="btn primary" onclick="setOrderStatus('${esc(o.id)}','Delivered')">Delivered</button><button class="btn" onclick="verify('${esc(o.id)}')">Verify Address</button><button class="btn" onclick="shipment('${esc(o.id)}')">AWB / Tracking</button><button class="btn" onclick="invoiceById('${esc(o.id)}')">Invoice</button><button class="btn" onclick="addressSlip('${esc(o.id)}')">📄 Address / Packing Slip (PDF)</button><button class="btn danger" onclick="cancelOrder('${esc(o.id)}')">Cancel</button><br><br><button class="btn" onclick="details('${esc(o.id)}')">Full Details</button><button class="btn danger" onclick="deleteOrder('${esc(o.id)}')">Delete Order</button></div>`};
+  window.orderCard=function(o){const p=productById(o.productId),qty=Math.max(1,num(o.qty)),price=num(o.price),imgProduct=p||{name:o.items?.[0]?.name||'Product',image:o.image||o.items?.[0]?.image||'',images:o.image||o.items?.[0]?.image?[o.image||o.items?.[0]?.image]:[]};return `<div class="order"><div style="display:flex;justify-content:space-between"><b>${esc(o.id||'—')}</b><span class="pill">${esc(o.status||'New')}</span></div><div class="orderbody"><div class="orderimg">${picHtml(imgProduct)}</div><div><b>${esc(p?.name||'Product')}</b><br>SKU: ${esc(p?.sku||'—')}<br>Size: <b>${esc(o.size||'—')}</b> · Color: <b>${esc(o.color||'—')}</b> · Qty: <b>${qty}</b><br>Unit: ${money(price)} · Total: <b>${money(price*qty)}</b><br>Payment: ${esc(o.payment||'COD')}<br><span class="muted">${esc(o.customer||'—')} · ${esc(o.phone||'—')}<br>${esc(o.date||'—')}</span></div></div><h3>Delivery Address</h3><div class="address">${esc(o.customer||'—')}\n${esc(o.address||'—')}\n📞 ${esc(o.phone||'—')}</div><p class="small">${o.verified?'✓ Address verified':'⚠ Address pending verification'}</p>${o.awb?`<p class="muted">AWB: <b>${esc(o.awb)}</b>${o.tracking_url?` · <a href="${esc(o.tracking_url)}" target="_blank" rel="noopener" style="color:#fff">Track Shipment</a>`:''}</p>`:''}${window.duplicateCustomerWarning(o)}<div class="timeline">${['Confirmed','Packed','Shipped','Out for Delivery','Delivered'].map((x,i)=>`<div class="step ${['Confirmed','Packed','Shipped','Out for Delivery','Delivered'].indexOf(o.status)>=i?'done':''}">${x}</div>`).join('')}</div><button class="btn${o.status==='Packed'?' primary':''}" onclick="setOrderStatus('${esc(o.id)}','Packed')">Packed</button><button class="btn${o.status==='Shipped'?' primary':''}" onclick="setOrderStatus('${esc(o.id)}','Shipped')">Shipped</button><button class="btn${o.status==='Out for Delivery'?' primary':''}" onclick="setOrderStatus('${esc(o.id)}','Out for Delivery')">Out for Delivery</button><button class="btn${o.status==='Delivered'?' primary':''}" onclick="setOrderStatus('${esc(o.id)}','Delivered')">Delivered</button><button class="btn" onclick="verify('${esc(o.id)}')">Verify Address</button><button class="btn" onclick="shipment('${esc(o.id)}')">AWB / Tracking</button><button class="btn" onclick="invoiceById('${esc(o.id)}')">Invoice</button><button class="btn" onclick="addressSlip('${esc(o.id)}')">📄 Address / Packing Slip (PDF)</button><button class="btn danger" onclick="cancelOrder('${esc(o.id)}')">Cancel</button><br><br><button class="btn" onclick="details('${esc(o.id)}')">Full Details</button><button class="btn danger" onclick="deleteOrder('${esc(o.id)}')">Delete Order</button></div>`};
 
   window.syncAdminNow=sync;
-  window.addEventListener('load',()=>{if(getAdminToken()){sync().then(()=>{const saved=localStorage.getItem('ytAdminSection');if(saved&&document.getElementById(saved))go(saved)}).catch(e=>toast(e.message))}});
+
+  async function checkDbStatus(){
+    const el=document.getElementById('ytDbStatus');
+    if(!el)return;
+    if(!getAdminToken()){el.textContent='⏳ Checking database…';return}
+    try{
+      const r=await fcServer('/api/admin/db-status');
+      if(!r.enabled){
+        el.textContent='● Local storage (no database connected)';
+        el.style.color='#e0b84a';
+      }else if(r.connected){
+        el.textContent='● Database Connected';
+        el.style.color='#7fd88f';
+      }else{
+        el.textContent='● Database Disconnected';
+        el.style.color='#f26a6a';
+        el.title=r.lastError?('Database check failed: '+r.lastError):'Could not reach the database';
+      }
+    }catch(e){
+      el.textContent='● Database Disconnected';
+      el.style.color='#f26a6a';
+      el.title=e.message||'Could not reach the database';
+    }
+  }
+  window.checkDbStatus=checkDbStatus;
+  setInterval(checkDbStatus,30000);
+
+  window.addEventListener('load',()=>{if(getAdminToken()){sync().then(()=>{checkDbStatus();const saved=localStorage.getItem('ytAdminSection');if(saved&&document.getElementById(saved))go(saved)}).catch(e=>toast(e.message))}});
 })();
 </script>
 
@@ -1268,9 +1324,10 @@ window.musicPlay=window.musicPlay||function(videoId,title,thumb){
     const subtotal=(o.subtotal!=null&&!isNaN(num(o.subtotal))&&num(o.subtotal)>0)?num(o.subtotal):itemsSubtotal;
     const discount=num(o.discount||0);
     const shipping=(o.shipping!=null)?num(o.shipping):num((state.settings||{}).shipping||0);
-    const grandTotal=(o.total!=null&&num(o.total)>0)?num(o.total):Math.max(0,subtotal-discount)+shipping;
     const gst=num(o.gst||0);
     const gstRate=num(o.gstRate||state.settings?.gst||0);
+    const hasGstData=o.gst!=null&&o.gstRate!=null;
+    const grandTotal=(o.total!=null&&num(o.total)>0)?num(o.total):Math.max(0,subtotal-discount)+shipping+gst;
     const statusSteps=['Confirmed','Packed','Shipped','Out for Delivery','Delivered'];
     const statusIdx=statusSteps.indexOf(o.status==='New'?'Confirmed':(o.status||''));
 
@@ -1364,6 +1421,7 @@ window.musicPlay=window.musicPlay||function(videoId,title,thumb){
             ${totalRow('Subtotal',money(subtotal))}
             ${gst>0?totalRow('CGST ('+(gstRate/2).toFixed(1)+'%)',money(gst/2)):''}
             ${gst>0?totalRow('SGST ('+(gstRate/2).toFixed(1)+'%)',money(gst/2)):''}
+            ${(!hasGstData)?'<div style="padding:6px 4px;font-size:10px;color:#aaa">GST breakup not recorded for this order (placed before GST tracking was added)</div>':''}
             ${discount>0?totalRow('Discount','- '+money(discount)):''}
             ${totalRow('Shipping Charge',money(shipping))}
             <div style="display:flex;justify-content:space-between;align-items:center;background:#111;color:#fff;padding:14px 18px;margin-top:8px;border-radius:8px">

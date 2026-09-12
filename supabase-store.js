@@ -346,4 +346,18 @@ function queueSave(db){
 async function flush(){ return writeQueue; }
 function status(){ return {enabled,configured:enabled,lastSync,lastError,pending:false}; }
 
-module.exports={enabled,hydrateDb,persistDb,queueSave,flush,status,uploadMedia,deleteMedia,deleteWhere,listMedia,publicMediaUrl,migrateLocalUploads,ensureStorageBucket,couponAlreadyRedeemed,reserveCouponRedemption,releaseCouponRedemption};
+// Actively checks whether Supabase is reachable right now (not just "was it
+// reachable at the last save"). Used by the admin panel's live DB status pill.
+async function ping(){
+  if(!enabled) return {enabled:false,connected:false,lastSync,lastError:null};
+  try{
+    await request('products','GET',null,'select=id&limit=1');
+    lastSync=new Date().toISOString(); lastError=null;
+    return {enabled:true,connected:true,lastSync,lastError:null};
+  }catch(e){
+    lastError=cleanError(e);
+    return {enabled:true,connected:false,lastSync,lastError};
+  }
+}
+
+module.exports={enabled,hydrateDb,persistDb,queueSave,flush,status,ping,uploadMedia,deleteMedia,deleteWhere,listMedia,publicMediaUrl,migrateLocalUploads,ensureStorageBucket,couponAlreadyRedeemed,reserveCouponRedemption,releaseCouponRedemption};
