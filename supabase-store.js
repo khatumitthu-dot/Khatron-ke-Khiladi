@@ -186,7 +186,7 @@ async function hydrateDb(db, options={}){
   if(!enabled) return { enabled:false, source:'data.json' };
 
   try{
-    const [products,customers,orders,items,reviews,coupons,returns,newsletter,notifications,audit,siteRows,settingsRows,deleted] = await Promise.all([
+    const [products,customers,orders,items,reviews,coupons,returns,newsletter,notifications,audit,siteRows,settingsRows,deleted,couponRedemptions] = await Promise.all([
       getAll('products','created_at'), getAll('customers','created_at'), getAll('orders','order_date'),
       getAll('order_items','created_at'), getAll('reviews','created_at'), getAll('coupons','created_at'),
       getAll('returns','created_at'), getAll('newsletter','created_at'), getAllOptional('notifications','created_at'),
