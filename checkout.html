@@ -36,6 +36,7 @@
     <div id="summary"></div>
     <div class="billLines">
       <div><span>Subtotal</span><b id="sumSubtotal">₹0</b></div>
+      <div id="sumDiscountRow" style="display:none;color:#8fd19e"><span>Discount<span id="sumCouponCode"></span></span><b id="sumDiscount" style="color:#8fd19e">−₹0</b></div>
       <div><span>Shipping</span><b id="sumShipping">₹0</b></div>
       <div class="total"><span>Total</span><b id="sumTotal">₹0</b></div>
     </div>
@@ -116,7 +117,8 @@ async function initCheckout(){
   document.getElementById('sumTotal').textContent=money(total);
 }
 initCheckout();
-async function applyCoupon(){const code=document.getElementById('couponCode').value.trim();if(!code)return;try{const customerToken=localStorage.getItem('yourTypeCustomerToken')||'';const headers={'Content-Type':'application/json'};if(customerToken)headers.Authorization='Bearer '+customerToken;const r=await fetch('/api/coupons/validate',{method:'POST',headers,body:JSON.stringify({code,subtotal,email:document.getElementById('customerEmail')?.value||'',phone:document.getElementById('customerPhone')?.value||''})});const d=await r.json();if(!r.ok)throw Error(d.error);discount=Number(d.discount||0);appliedCoupon=d.code;total=subtotal-discount+shipping;document.getElementById('sumTotal').textContent=money(total);document.getElementById('couponMsg').textContent='Coupon applied: '+money(discount)+' off';}catch(e){document.getElementById('couponMsg').textContent=e.message;discount=0;appliedCoupon='';total=subtotal+shipping;document.getElementById('sumTotal').textContent=money(total)}}
+function renderDiscountRow(){const row=document.getElementById('sumDiscountRow');if(discount>0){row.style.display='';document.getElementById('sumDiscount').textContent='−'+money(discount);document.getElementById('sumCouponCode').textContent=appliedCoupon?' ('+appliedCoupon+')':'';}else{row.style.display='none';}}
+async function applyCoupon(){const code=document.getElementById('couponCode').value.trim();if(!code)return;try{const customerToken=localStorage.getItem('yourTypeCustomerToken')||'';const headers={'Content-Type':'application/json'};if(customerToken)headers.Authorization='Bearer '+customerToken;const r=await fetch('/api/coupons/validate',{method:'POST',headers,body:JSON.stringify({code,subtotal,email:document.getElementById('customerEmail')?.value||'',phone:document.getElementById('customerPhone')?.value||''})});const d=await r.json();if(!r.ok)throw Error(d.error);discount=Number(d.discount||0);appliedCoupon=d.code;total=subtotal-discount+shipping;document.getElementById('sumTotal').textContent=money(total);document.getElementById('couponMsg').textContent='Coupon applied: '+money(discount)+' off';renderDiscountRow();}catch(e){document.getElementById('couponMsg').textContent=e.message;discount=0;appliedCoupon='';total=subtotal+shipping;document.getElementById('sumTotal').textContent=money(total);renderDiscountRow();}}
 function showUPIPopup(){
  const note=document.getElementById('upiNote');
  if(note) note.style.display='block';
