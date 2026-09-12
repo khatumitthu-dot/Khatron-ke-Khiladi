@@ -1269,6 +1269,10 @@ window.musicPlay=window.musicPlay||function(videoId,title,thumb){
     const discount=num(o.discount||0);
     const shipping=(o.shipping!=null)?num(o.shipping):num((state.settings||{}).shipping||0);
     const grandTotal=(o.total!=null&&num(o.total)>0)?num(o.total):Math.max(0,subtotal-discount)+shipping;
+    const gst=num(o.gst||0);
+    const gstRate=num(o.gstRate||state.settings?.gst||0);
+    const statusSteps=['Confirmed','Packed','Shipped','Out for Delivery','Delivered'];
+    const statusIdx=statusSteps.indexOf(o.status==='New'?'Confirmed':(o.status||''));
 
     const rows=items.map((it,i)=>`<tr>
       <td style="padding:16px 10px;text-align:center;color:#555;font-size:13px;border-bottom:1px solid #eee">${i+1}</td>
@@ -1308,6 +1312,12 @@ window.musicPlay=window.musicPlay||function(videoId,title,thumb){
           <div style="margin-left:auto;text-align:right">
             <div style="font-size:10px;letter-spacing:1px;color:#999;font-weight:700">ORDER STATUS</div>
             <div style="margin-top:6px;display:inline-block;background:#111;color:#fff;padding:6px 16px;border-radius:999px;font-size:12px;font-weight:700">${statusIcon(o.status)} ${escS(o.status||'New')}</div>
+          </div>
+        </div>
+
+        <div style="padding:16px 34px 0">
+          <div style="display:flex;align-items:center">
+            ${statusSteps.map((x,i)=>{const done=statusIdx>=i;return `<div style="flex:1;text-align:center"><div style="height:4px;border-radius:2px;background:${done?'#111':'#e6e6e6'}"></div><div style="font-size:9px;letter-spacing:.5px;margin-top:6px;color:${done?'#111':'#aaa'};font-weight:700">${x.toUpperCase()}</div></div>`;}).join('')}
           </div>
         </div>
 
@@ -1352,6 +1362,8 @@ window.musicPlay=window.musicPlay||function(videoId,title,thumb){
         <div style="display:flex;justify-content:flex-end;padding:20px 34px">
           <div style="width:340px">
             ${totalRow('Subtotal',money(subtotal))}
+            ${gst>0?totalRow('CGST ('+(gstRate/2).toFixed(1)+'%)',money(gst/2)):''}
+            ${gst>0?totalRow('SGST ('+(gstRate/2).toFixed(1)+'%)',money(gst/2)):''}
             ${discount>0?totalRow('Discount','- '+money(discount)):''}
             ${totalRow('Shipping Charge',money(shipping))}
             <div style="display:flex;justify-content:space-between;align-items:center;background:#111;color:#fff;padding:14px 18px;margin-top:8px;border-radius:8px">

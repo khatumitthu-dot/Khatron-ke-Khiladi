@@ -15,6 +15,15 @@
 <main class="checkoutPage">
   <div>
     <p class="eyebrow">YOUR TYPE / CHECKOUT</p>
+    <div class="checkoutSteps" id="checkoutSteps">
+      <div class="csStep done"><span class="csDot">✓</span><span class="csLabel">Bag</span></div>
+      <div class="csLine done" id="csLine1"></div>
+      <div class="csStep current" id="csStepAddress"><span class="csDot">2</span><span class="csLabel">Address</span></div>
+      <div class="csLine" id="csLine2"></div>
+      <div class="csStep" id="csStepPayment"><span class="csDot">3</span><span class="csLabel">Payment</span></div>
+      <div class="csLine" id="csLine3"></div>
+      <div class="csStep" id="csStepConfirm"><span class="csDot">4</span><span class="csLabel">Confirm</span></div>
+    </div>
     <h1>Complete<br>your order.</h1>
     <form onsubmit="placeOrder(event)" class="form" id="checkoutForm">
       <div><input id="couponCode" placeholder="Coupon code" autocomplete="off"><button type="button" onclick="applyCoupon()">APPLY COUPON</button><small id="couponMsg"></small></div>
@@ -43,6 +52,11 @@
   </aside>
 </main>
 
+<div class="mobileStickyBar" id="mobileStickyBar">
+  <div class="mobileStickyInfo"><span>Total</span><b id="stickyTotal">₹0</b></div>
+  <button type="button" class="mobileStickyBtn" onclick="document.getElementById('checkoutForm').requestSubmit()">PLACE ORDER&nbsp;&nbsp;→</button>
+</div>
+
 <div class="orderModal" id="orderModal" aria-hidden="true">
   <div class="orderModalBackdrop" onclick="closeOrderModal()"></div>
   <section class="orderCard" role="dialog" aria-modal="true" aria-labelledby="orderCompleteTitle">
@@ -63,6 +77,28 @@
   </section>
 </div>
 <style>
+.checkoutSteps{display:flex;align-items:flex-start;margin-bottom:26px}
+.csStep{display:flex;flex-direction:column;align-items:center;gap:6px;flex:0 0 auto}
+.csDot{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;border:1px solid #333;background:#0d0d0d;color:#777}
+.csStep.done .csDot{background:#f2f2f2;color:#111;border-color:#f2f2f2}
+.csStep.current .csDot{border-color:#eee;color:#eee}
+.csLabel{font-size:9px;letter-spacing:1px;color:#777}
+.csStep.current .csLabel,.csStep.done .csLabel{color:#eee}
+.csLine{flex:1;height:1px;background:#292929;margin-top:13px;min-width:16px}
+.csLine.done{background:#f2f2f2}
+@media(max-width:600px){.checkoutSteps{margin-bottom:20px}.csLabel{font-size:8px}}
+
+.mobileStickyBar{display:none}
+@media(max-width:760px){
+  .checkoutPage{padding-bottom:96px}
+  .checkout{display:none}
+  .mobileStickyBar{position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 16px calc(12px + env(safe-area-inset-bottom));background:rgba(10,10,10,.92);backdrop-filter:blur(14px);border-top:1px solid #262626}
+  .mobileStickyInfo{display:flex;flex-direction:column;line-height:1.3}
+  .mobileStickyInfo span{font-size:9px;letter-spacing:1.5px;color:#888}
+  .mobileStickyInfo b{font-size:16px;color:#f4f4f4}
+  .mobileStickyBtn{flex:0 0 auto;min-height:48px;padding:0 22px;border:1px solid #eee;background:#f2f2f2;color:#090909;font-size:11px;font-weight:700;letter-spacing:1.5px;cursor:pointer}
+}
+
 .orderModal{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;padding:20px;opacity:0;visibility:hidden;pointer-events:none;transition:opacity .35s ease,visibility .35s ease}
 .orderModal.isOpen{opacity:1;visibility:visible;pointer-events:auto}
 .orderModalBackdrop{position:absolute;inset:0;background:rgba(0,0,0,.78);backdrop-filter:blur(10px)}
@@ -97,7 +133,7 @@ const imageUrl=v=>{const s=String(v||'').trim();if(!s)return '/photos/ornament.j
 let checkoutSettings={shipping:99,freeShipping:999};
 const priceOf=p=>Number(String(p?.[1]??p?.price??0).replace(/[^0-9]/g,''))||0;
 const summary=document.getElementById('summary');
-if(!cart.length){summary.innerHTML='<p style="color:#777;font-size:11px;line-height:1.7">Your bag is empty. <a href="index.html">Return to shop</a>.</p>';document.querySelector('.checkout').disabled=true;}
+if(!cart.length){summary.innerHTML='<p style="color:#777;font-size:11px;line-height:1.7">Your bag is empty. <a href="index.html">Return to shop</a>.</p>';document.querySelector('.checkout').disabled=true;const msb=document.getElementById('mobileStickyBar');if(msb)msb.style.display='none';}
 else{summary.innerHTML=cart.map(p=>`<div class="sumItem"><img src="${imageUrl(p[2])}" alt="${String(p[0]||'Product').replace(/[<>]/g,'')}" onerror="this.onerror=null;this.src='/photos/ornament.jpg'"><span>${p[0]}<small>${p[1]}${p.size?' · SIZE '+p.size:''}${p.color?' · '+p.color.toUpperCase():''} · QTY ${Number(p.qty||1)}</small></span></div>`).join('');}
 let subtotal=cart.reduce((s,p)=>s+priceOf(p)*Number(p.qty||1),0);
 let shipping=subtotal===0?0:(subtotal>=checkoutSettings.freeShipping?0:checkoutSettings.shipping);
@@ -115,10 +151,25 @@ async function initCheckout(){
   document.getElementById('sumSubtotal').textContent=money(subtotal);
   document.getElementById('sumShipping').textContent=shipping===0?(subtotal>=checkoutSettings.freeShipping?'FREE':'—'):money(shipping);
   document.getElementById('sumTotal').textContent=money(total);
+  const stickyTotalEl=document.getElementById('stickyTotal'); if(stickyTotalEl)stickyTotalEl.textContent=money(total);
 }
 initCheckout();
 function renderDiscountRow(){const row=document.getElementById('sumDiscountRow');if(discount>0){row.style.display='';document.getElementById('sumDiscount').textContent='−'+money(discount);document.getElementById('sumCouponCode').textContent=appliedCoupon?' ('+appliedCoupon+')':'';}else{row.style.display='none';}}
-async function applyCoupon(){const code=document.getElementById('couponCode').value.trim();if(!code)return;try{const customerToken=localStorage.getItem('yourTypeCustomerToken')||'';const headers={'Content-Type':'application/json'};if(customerToken)headers.Authorization='Bearer '+customerToken;const r=await fetch('/api/coupons/validate',{method:'POST',headers,body:JSON.stringify({code,subtotal,email:document.getElementById('customerEmail')?.value||'',phone:document.getElementById('customerPhone')?.value||''})});const d=await r.json();if(!r.ok)throw Error(d.error);discount=Number(d.discount||0);appliedCoupon=d.code;total=subtotal-discount+shipping;document.getElementById('sumTotal').textContent=money(total);document.getElementById('couponMsg').textContent='Coupon applied: '+money(discount)+' off';renderDiscountRow();}catch(e){document.getElementById('couponMsg').textContent=e.message;discount=0;appliedCoupon='';total=subtotal+shipping;document.getElementById('sumTotal').textContent=money(total);renderDiscountRow();}}
+async function applyCoupon(){const code=document.getElementById('couponCode').value.trim();if(!code)return;try{const customerToken=localStorage.getItem('yourTypeCustomerToken')||'';const headers={'Content-Type':'application/json'};if(customerToken)headers.Authorization='Bearer '+customerToken;const r=await fetch('/api/coupons/validate',{method:'POST',headers,body:JSON.stringify({code,subtotal,email:document.getElementById('customerEmail')?.value||'',phone:document.getElementById('customerPhone')?.value||''})});const d=await r.json();if(!r.ok)throw Error(d.error);discount=Number(d.discount||0);appliedCoupon=d.code;total=subtotal-discount+shipping;document.getElementById('sumTotal').textContent=money(total);document.getElementById('couponMsg').textContent='Coupon applied: '+money(discount)+' off';renderDiscountRow();syncStickyTotal();}catch(e){document.getElementById('couponMsg').textContent=e.message;discount=0;appliedCoupon='';total=subtotal+shipping;document.getElementById('sumTotal').textContent=money(total);renderDiscountRow();syncStickyTotal();}}
+function syncStickyTotal(){const el=document.getElementById('stickyTotal'); if(el)el.textContent=money(total);}
+document.querySelectorAll('input[name="pay"]').forEach(r=>r.addEventListener('change',advanceToPayment));
+function advanceToPayment(){
+  const addr=document.getElementById('csStepAddress'),pay=document.getElementById('csStepPayment'),line2=document.getElementById('csLine2');
+  if(addr&&!addr.classList.contains('done')){addr.classList.remove('current');addr.classList.add('done');addr.querySelector('.csDot').textContent='✓';}
+  if(line2)line2.classList.add('done');
+  if(pay&&!pay.classList.contains('current')){pay.classList.add('current');}
+}
+function advanceToConfirm(){
+  const pay=document.getElementById('csStepPayment'),conf=document.getElementById('csStepConfirm'),line3=document.getElementById('csLine3');
+  if(pay){pay.classList.remove('current');pay.classList.add('done');pay.querySelector('.csDot').textContent='✓';}
+  if(line3)line3.classList.add('done');
+  if(conf){conf.classList.remove('current');conf.classList.add('done');conf.querySelector('.csDot').textContent='✓';}
+}
 function showUPIPopup(){
  const note=document.getElementById('upiNote');
  if(note) note.style.display='block';
@@ -139,6 +190,7 @@ async function placeOrder(e){
   const r=await fetch('/api/orders',{method:'POST',headers,body:JSON.stringify(purchase)});const d=await r.json();if(!r.ok)throw new Error(d.error||'Could not place order');
   purchase.orderId=d.orderId; purchase.date=new Date().toISOString();
   localStorage.setItem('yourTypeLastPurchase',JSON.stringify(purchase));localStorage.setItem('yourTypeLastOrder',JSON.stringify(purchase));localStorage.removeItem('yourTypeCart');
+  advanceToConfirm();
   document.getElementById('doneOrderId').textContent=d.orderId;document.getElementById('doneTotal').textContent=money(total);document.getElementById('orderModal').classList.add('isOpen');document.getElementById('orderModal').setAttribute('aria-hidden','false');document.body.style.overflow='hidden';
  }catch(err){alert(err.message)}finally{if(btn)btn.disabled=false}
 }
