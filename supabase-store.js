@@ -3,11 +3,9 @@ const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABA
 const SUPABASE_STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'your-type-media';
 const enabled = Boolean(SUPABASE_URL && SUPABASE_KEY);
 
+let writeQueue = Promise.resolve();
 let lastSync = null;
 let lastError = null;
-let pendingDb = null;   // latest live db reference waiting to be saved (not yet cloned)
-let savingNow = false;  // whether a persistDb() call is currently in flight
-let saveWaiters = [];   // callers awaiting the next completed save
 // Some Supabase projects can have a table visible in Table Editor but not exposed
 // through PostgREST. Keep that optional table from blocking the whole store.
 const disabledTables = new Set();
@@ -125,27 +123,10 @@ async function request(table, method='GET', body=null, query=''){
   const url=SUPABASE_URL.replace(/\/$/,'')+'/rest/v1/'+table+(query?'?'+query:'');
   const headers={apikey:SUPABASE_KEY,Authorization:'Bearer '+SUPABASE_KEY,Accept:'application/json','Content-Type':'application/json'};
   if(method==='POST'||method==='PATCH'||method==='DELETE') headers.Prefer='resolution=merge-duplicates,return=representation';
-  // Supabase/Cloudflare occasionally returns a transient 5xx (520/502/503) for a
-  // healthy project that's just waking up or had a brief blip. Previously a single
-  // such blip permanently failed that save. Retry once after a short delay before
-  // giving up, so a momentary hiccup doesn't look like (or cause) data loss.
-  let lastErr;
-  for(let attempt=0;attempt<2;attempt++){
-    try{
-      const r=await fetch(url,{method,headers,body:body==null?undefined:JSON.stringify(body)});
-      const text=await r.text(); let data=[]; try{data=text?JSON.parse(text):[]}catch{data=[]}
-      if(!r.ok){
-        const err=new Error(`${table} ${method} failed (${r.status}): ${data?.message||data?.error||text||'Unknown error'}`);
-        if(r.status>=500 && attempt===0){ lastErr=err; await new Promise(res=>setTimeout(res,1500)); continue; }
-        throw err;
-      }
-      return data;
-    }catch(e){
-      if(attempt===0 && /fetch failed|ECONNRESET|ETIMEDOUT/i.test(String(e.message||e))){ lastErr=e; await new Promise(res=>setTimeout(res,1500)); continue; }
-      throw e;
-    }
-  }
-  throw lastErr;
+  const r=await fetch(url,{method,headers,body:body==null?undefined:JSON.stringify(body)});
+  const text=await r.text(); let data=[]; try{data=text?JSON.parse(text):[]}catch{data=[]}
+  if(!r.ok) throw new Error(`${table} ${method} failed (${r.status}): ${data?.message||data?.error||text||'Unknown error'}`);
+  return data;
 }
 async function getAll(table, order='created_at'){
   return request(table,'GET',null,'select=*'+(order?'&order='+encodeURIComponent(order)+'.desc':''));
@@ -164,6 +145,43 @@ async function getAllOptional(table, order='created_at'){
   }
 }
 
+
+async function couponAlreadyRedeemed({couponCode,customerId,email,phone}){
+  if(!enabled) return false;
+  if(disabledTables.has('coupon_redemptions')) throw new Error('Coupon redemption table is not configured');
+  const code=encodeURIComponent(String(couponCode||'').toUpperCase());
+  const ids=[];
+  if(customerId) ids.push('customer_id.eq.'+encodeURIComponent(String(customerId)));
+  const em=String(email||'').trim().toLowerCase();
+  const ph=String(phone||'').replace(/\D/g,'');
+  if(em) ids.push('email.eq.'+encodeURIComponent(em));
+  if(ph) ids.push('phone.eq.'+encodeURIComponent(ph));
+  if(!ids.length) return false;
+  // OR across identity fields, always scoped to the coupon.
+  const or='('+ids.join(',')+')';
+  const rows=await request('coupon_redemptions','GET',null,'select=id&coupon_code=eq.'+code+'&or='+or+'&limit=1');
+  return Array.isArray(rows)&&rows.length>0;
+}
+
+async function reserveCouponRedemption({couponCode,customerId,email,phone,orderId}){
+  if(!enabled) return {ok:true,localOnly:true};
+  if(disabledTables.has('coupon_redemptions')) throw new Error('Coupon redemption table is not configured');
+  const row={id:require('crypto').randomUUID(),coupon_code:String(couponCode||'').toUpperCase(),customer_id:customerId||null,email:String(email||'').trim().toLowerCase(),phone:String(phone||'').replace(/\D/g,''),order_id:String(orderId||''),redeemed_at:new Date().toISOString()};
+  try{
+    const rows=await request('coupon_redemptions','POST',row);
+    return {ok:true,row:(Array.isArray(rows)?rows[0]:row)};
+  }catch(e){
+    const msg=cleanError(e);
+    if(/\b(409|duplicate|unique)\b/i.test(msg)) return {ok:false,alreadyUsed:true};
+    throw e;
+  }
+}
+
+async function releaseCouponRedemption(id){
+  if(!enabled || !id) return;
+  await request('coupon_redemptions','DELETE',null,'id=eq.'+encodeURIComponent(String(id)));
+}
+
 async function hydrateDb(db, options={}){
   if(!enabled) return { enabled:false, source:'data.json' };
 
@@ -173,7 +191,7 @@ async function hydrateDb(db, options={}){
       getAll('order_items','created_at'), getAll('reviews','created_at'), getAll('coupons','created_at'),
       getAll('returns','created_at'), getAll('newsletter','created_at'), getAllOptional('notifications','created_at'),
       getAllOptional('audit','created_at'), getAllOptional('site_config','updated_at'), getAllOptional('store_settings','updated_at'),
-      getAllOptional('deleted_product_ids','deleted_at')
+      getAllOptional('deleted_product_ids','deleted_at'), getAllOptional('coupon_redemptions','redeemed_at')
     ]);
 
     const hasBusinessData = products.length || customers.length || orders.length || items.length || reviews.length || coupons.length || returns.length || newsletter.length || notifications.length;
@@ -197,6 +215,7 @@ async function hydrateDb(db, options={}){
     db.orders = orders.map(o=>({orderId:o.order_id,userId:o.user_id||null,name:o.name,email:o.email,phone:o.phone,address:o.address,city:o.city||'',pin:o.pin,items:itemMap.get(o.order_id)||[],subtotal:Number(o.subtotal||0),discount:Number(o.discount||0),couponCode:o.coupon_code||'',taxableSubtotal:Number(o.taxable_subtotal||0),gstRate:Number(o.gst_rate||0),gst:Number(o.gst||0),shipping:Number(o.shipping||0),total:Number(o.total||0),payment:o.payment||'cod',status:o.status||'New',verified:Boolean(o.verified),awb:o.awb||'',courier:o.courier||'',tracking_url:o.tracking_url||'',date:o.order_date}));
     db.reviews = reviews.map(r=>({id:r.id,product:r.product,rating:Number(r.rating||5),title:r.title||'',text:r.review_text||'',name:r.customer_name||'Customer',verified:Boolean(r.verified),status:r.status||'pending',reply:r.reply||'',createdAt:r.created_at}));
     db.coupons = coupons.map(c=>({id:c.id,code:c.code,type:c.type||'percent',value:Number(c.value||0),minOrder:Number(c.min_order||0),maxDiscount:Number(c.max_discount||0),expiresAt:c.expires_at||null,active:c.active!==false,createdAt:c.created_at}));
+    db.couponRedemptions = (couponRedemptions||[]).map(r=>({id:r.id,couponCode:r.coupon_code,customerId:r.customer_id||null,email:r.email||'',phone:r.phone||'',orderId:r.order_id||'',redeemedAt:r.redeemed_at}));
     db.returns = returns.map(r=>({id:r.id,orderId:r.order_id,userId:r.user_id,status:r.status||'pending',refundAmount:Number(r.refund_amount||0),data:r.data||{},createdAt:r.created_at}));
     db.newsletter = newsletter.map(n=>({email:n.email,createdAt:n.created_at}));
     db.notifications = notifications.map(n=>({id:n.id,type:n.type||'',title:n.title||'',message:n.message||'',read:Boolean(n.read),data:n.data||{},createdAt:n.created_at}));
@@ -204,15 +223,7 @@ async function hydrateDb(db, options={}){
     if(siteRows[0]){ const s=siteRows[0]; db.site={hero:s.hero,announcement:s.announcement,sections:s.sections||{},sectionProducts:s.section_products||{},colorPalette:s.color_palette||[],store:s.store||{},content:s.content||{},categories:s.categories||[]}; }
     if(settingsRows[0]){ const s=settingsRows[0]; db.settings={gst:Number(s.gst||0),shipping:Number(s.shipping||0),freeShipping:Number(s.free_shipping||0),gateway:s.gateway||{},courier:s.courier||{},notifications:s.notifications||{},role:s.role||'Super Admin'}; }
     db.deletedProductIds = [...new Set([...(options.preserveDeletedIds||[]).map(String),...deleted.map(x=>String(x.product_id))])];
-    // Previously this unconditionally wiped ALL admin/customer login sessions on
-    // every boot (every restart/redeploy — and the app was restarting frequently
-    // due to the OOM crashes). That silently logged the admin out mid-task, which
-    // is why "Add Product" (and other admin actions) started failing with
-    // "Unauthorized" right after a restart even though the panel still looked
-    // logged in. Sessions aren't stored in Supabase, only in the local snapshot
-    // (data.json), so keep whatever was already loaded locally and just drop any
-    // that have naturally expired — don't blank them out on every hydrate.
-    db.sessions = Object.fromEntries(Object.entries(db.sessions||{}).filter(([,s])=>s&&s.expires>Date.now()));
+    db.sessions = {};
     lastSync = new Date().toISOString(); lastError = null;
     return {enabled:true,source:'supabase',migrated:false};
   }catch(e){
@@ -229,34 +240,13 @@ async function persistDb(db, initial=false){
   // image, images, sizes, colors, active, featured, created_at, updated_at.
   // Do NOT send UI-only/local fields such as badge, old_price, sections or likes;
   // PostgREST rejects the entire insert/upsert when even one unknown column is sent.
-  // The `sku` column has a UNIQUE constraint in Supabase. If two products end up
-  // with the same (or blank) SKU — e.g. an auto-generated default collided, or an
-  // admin left SKU empty on more than one product — the ENTIRE batch upsert used
-  // to fail with a 409 "duplicate key value violates unique constraint
-  // products_sku_key" error, over and over, on every single save (because every
-  // save resends the full product list). Auto-dedupe here so a SKU clash can
-  // never block saving orders/products/settings again.
-  const seenSkus=new Set();
-  const productRows=(d.products||[]).filter(p=>!d.deletedProductIds?.includes(String(p.id))).map(p=>{
-    let sku=String(p.sku||'').trim();
-    if(sku){
-      if(seenSkus.has(sku)){
-        const unique=sku+'-'+String(p.id).replace(/[^a-zA-Z0-9]/g,'').slice(-6);
-        console.warn(`[Supabase] Duplicate SKU "${sku}" on product ${p.id}; auto-renamed to "${unique}" to avoid blocking the save.`);
-        sku=unique;
-        p.sku=unique; // keep local/in-memory data consistent with what was saved
-      }
-      seenSkus.add(sku);
-    } else {
-      sku='';
-    }
-    return {
+  const productRows=(d.products||[]).filter(p=>!d.deletedProductIds?.includes(String(p.id))).map(p=>({
     id:String(p.id),
     name:String(p.name||''),
     category:p.category||'',
     price:Number(String(p.price||0).replace(/[^0-9.-]/g,''))||0,
     cost:Number(p.cost||0),
-    sku:sku||null,
+    sku:p.sku||null,
     description:p.description||'',
     image:p.image||'',
     images:Array.isArray(p.images)?p.images:[],
@@ -264,18 +254,10 @@ async function persistDb(db, initial=false){
     colors:Array.isArray(p.colors)?p.colors:[],
     active:p.active!==false,
     featured:Boolean(p.featured)
-  };});
+  }));
   const customerRows=(d.users||[]).map(u=>({id:String(u.id),name:String(u.name||''),email:String(u.email||'').toLowerCase(),phone:u.phone||'',password_hash:u.password||null,created_at:u.createdAt||undefined}));
   const orderRows=(d.orders||[]).map(o=>({order_id:String(o.orderId),user_id:o.userId||null,name:o.name||'',email:o.email||'',phone:o.phone||'',address:o.address||'',city:o.city||'',pin:o.pin||'',subtotal:Number(o.subtotal||0),discount:Number(o.discount||0),coupon_code:o.couponCode||'',taxable_subtotal:Number(o.taxableSubtotal||0),gst_rate:Number(o.gstRate||0),gst:Number(o.gst||0),shipping:Number(o.shipping||0),total:Number(o.total||0),payment:o.payment||'cod',status:o.status||'New',verified:Boolean(o.verified),awb:o.awb||'',courier:o.courier||'',tracking_url:o.tracking_url||'',order_date:o.date||undefined}));
-  // The `order_items.product_id` column in Supabase is typed as uuid, but product
-  // IDs generated by this app look like "p_6ed48aea0cce" (not a real UUID). Sending
-  // that as product_id made EVERY order_items save fail (400 invalid input syntax
-  // for type uuid), which is why order size/SKU/price kept coming back blank/zero
-  // after a restart — the item details were never actually reaching Supabase.
-  // Only send product_id through when it's a genuine UUID; otherwise store null so
-  // the rest of the item (name, image, sku, price, size, color, qty) still saves.
-  const UUID_RE=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  const itemRows=[]; for(const o of d.orders||[]) for(const it of o.items||[]) itemRows.push({order_id:String(o.orderId),product_id:(it.productId&&UUID_RE.test(String(it.productId)))?it.productId:null,name:it.name||'',image:it.image||'',sku:it.sku||'',price:Number(String(it.price||0).replace(/[^0-9.-]/g,''))||0,size:it.size||'M',color:it.color||'Black',qty:Number(it.qty||1)});
+  const itemRows=[]; for(const o of d.orders||[]) for(const it of o.items||[]) itemRows.push({order_id:String(o.orderId),product_id:it.productId||null,name:it.name||'',image:it.image||'',sku:it.sku||'',price:Number(String(it.price||0).replace(/[^0-9.-]/g,''))||0,size:it.size||'M',color:it.color||'Black',qty:Number(it.qty||1)});
   const reviewRows=(d.reviews||[]).map(r=>({id:String(r.id),product:r.product||'',rating:Number(r.rating||5),title:r.title||'',review_text:r.text||'',customer_name:r.name||'Customer',verified:Boolean(r.verified),status:r.status||'pending',reply:r.reply||'',created_at:r.createdAt||undefined}));
   const couponRows=(d.coupons||[]).map(c=>({id:String(c.id),code:String(c.code||'').toUpperCase(),type:c.type||'percent',value:Number(c.value||0),min_order:Number(c.minOrder||0),max_discount:Number(c.maxDiscount||0),expires_at:c.expiresAt||null,active:c.active!==false,created_at:c.createdAt||undefined}));
   const returnRows=(d.returns||[]).map(r=>({id:String(r.id),order_id:r.orderId||null,user_id:r.userId||null,status:r.status||'pending',refund_amount:Number(r.refundAmount||0),data:r.data||{},created_at:r.createdAt||undefined}));
@@ -306,12 +288,19 @@ async function persistDb(db, initial=false){
   await replaceTable('orders',orderRows,'order_id');
   if(!disabledTables.has('order_items')){
     try{
-      // NORMAL SAVES MUST NEVER DELETE order items. A product/settings update can
-      // arrive with an incomplete in-memory order snapshot; deleting/rebuilding
-      // items here could permanently erase a customer's order lines. Order items
-      // are therefore append/upsert-only during normal saves. The ONLY deletion
-      // path is the explicit admin order-delete route in server.js.
-      if(itemRows.length) await request('order_items','POST',itemRows,'on_conflict=order_id,product_id,size,color');
+      // Only refresh items belonging to orders present in this snapshot. Never
+      // wipe every order_item just because another save (e.g. product update)
+      // happened while the local order list was empty/incomplete.
+      const localOrderIds=[...new Set((d.orders||[]).map(o=>String(o.orderId)).filter(Boolean))];
+      if(localOrderIds.length){
+        const existing=await request('order_items','GET',null,'select=order_id');
+        const localSet=new Set(localOrderIds);
+        for(const r of existing||[]){
+          const oid=String(r.order_id||'');
+          if(localSet.has(oid)) await request('order_items','DELETE',null,'order_id=eq.'+encodeURIComponent(oid));
+        }
+        if(itemRows.length) await request('order_items','POST',itemRows);
+      }
     }catch(e){
       if(/\b404\b/.test(cleanError(e))){
         disabledTables.add('order_items');
@@ -336,6 +325,7 @@ async function persistDb(db, initial=false){
   catch(e){ if(/\b404\b/.test(cleanError(e))){ disabledTables.add('site_config'); console.warn('[Supabase] Optional table "site_config" is not available through PostgREST; skipping its sync.'); } else throw e; }
   try{ await request('store_settings','POST',{id:1,gst:Number(d.settings?.gst||0),shipping:Number(d.settings?.shipping||0),free_shipping:Number(d.settings?.freeShipping||0),gateway:d.settings?.gateway||{},courier:d.settings?.courier||{},notifications:d.settings?.notifications||{},role:d.settings?.role||'Super Admin'},'on_conflict=id'); }
   catch(e){ if(/\b404\b/.test(cleanError(e))){ disabledTables.add('store_settings'); console.warn('[Supabase] Optional table "store_settings" is not available through PostgREST; skipping its sync.'); } else throw e; }
+  await replaceTable('coupon_redemptions',(d.couponRedemptions||[]).map(r=>({id:String(r.id),coupon_code:String(r.couponCode||'').toUpperCase(),customer_id:r.customerId||null,email:String(r.email||'').toLowerCase(),phone:String(r.phone||'').replace(/\D/g,''),order_id:String(r.orderId||''),redeemed_at:r.redeemedAt||undefined})),'id');
   await replaceTable('deleted_product_ids',(d.deletedProductIds||[]).map(id=>({product_id:String(id)})),'product_id');
   lastSync = new Date().toISOString(); lastError=null;
   return {enabled:true,source:'supabase',initial};
@@ -343,43 +333,17 @@ async function persistDb(db, initial=false){
 
 function queueSave(db){
   if(!enabled) return Promise.resolve({enabled:false});
-  // Coalesced write queue: earlier this took an immediate deep-clone snapshot on
-  // EVERY call and chained them one after another. If several saves were triggered
-  // close together (loading the admin panel, adding a product, a settings save,
-  // the 15s storage-status poll, etc.) each call held its own full clone of the
-  // WHOLE database in memory at once until its turn came up — with enough of them
-  // queued, memory usage snowballed and crashed the process (heap out of memory),
-  // which is what kept restarting the panel. Now only the latest db reference is
-  // remembered between runs, and at most ONE deep clone exists in memory at a
-  // time — extra calls that arrive while a save is already running just update
-  // what "latest" points to instead of creating another clone.
-  pendingDb=db;
-  return new Promise(resolve=>{ saveWaiters.push(resolve); runQueue(); });
+  const snapshot=deep(db);
+  // Chain onto writeQueue via .catch(()=>{}) first so that a PRIOR failed save
+  // does not permanently poison every future save (writeQueue must never stay
+  // in a rejected state, or every subsequent queueSave/flush call would also
+  // reject immediately without even attempting to persist).
+  const job=writeQueue.catch(()=>{}).then(()=>persistDb(snapshot,false));
+  writeQueue=job.catch(e=>{lastError=cleanError(e);console.error('[Supabase]',lastError);});
+  return job;
 }
-async function runQueue(){
-  if(savingNow) return; // a run is already in progress; it will pick up the latest pendingDb below
-  savingNow=true;
-  try{
-    while(pendingDb){
-      const dbRef=pendingDb; pendingDb=null;
-      const waiters=saveWaiters; saveWaiters=[];
-      const snapshot=deep(dbRef);
-      let result;
-      try{
-        result=await persistDb(snapshot,false);
-      }catch(e){
-        lastError=cleanError(e); console.error('[Supabase]',lastError);
-        result={enabled:true,error:lastError};
-      }
-      waiters.forEach(r=>r(result));
-    }
-  }finally{
-    savingNow=false;
-  }
-}
-async function flush(){
-  while(savingNow||pendingDb) await new Promise(r=>setTimeout(r,50));
-}
-function status(){ return {enabled,configured:enabled,lastSync,lastError,pending:savingNow||Boolean(pendingDb)}; }
 
-module.exports={enabled,hydrateDb,persistDb,queueSave,flush,status,uploadMedia,deleteMedia,deleteWhere,listMedia,publicMediaUrl,migrateLocalUploads,ensureStorageBucket};
+async function flush(){ return writeQueue; }
+function status(){ return {enabled,configured:enabled,lastSync,lastError,pending:false}; }
+
+module.exports={enabled,hydrateDb,persistDb,queueSave,flush,status,uploadMedia,deleteMedia,deleteWhere,listMedia,publicMediaUrl,migrateLocalUploads,ensureStorageBucket,couponAlreadyRedeemed,reserveCouponRedemption,releaseCouponRedemption};

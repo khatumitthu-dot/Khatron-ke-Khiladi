@@ -93,7 +93,7 @@
 const cart=JSON.parse(localStorage.getItem('yourTypeCart')||'[]');
 const money=n=>'₹'+Number(n||0).toLocaleString('en-IN');
 const imageUrl=v=>{const s=String(v||'').trim();if(!s)return '/photos/ornament.jpg';if(/^data:|^https?:|^\//i.test(s))return s;if(/^uploads\//i.test(s)||/^photos\//i.test(s))return '/'+s;return '/uploads/'+encodeURIComponent(s)};
-let checkoutSettings={shipping:99,freeShipping:1999};
+let checkoutSettings={shipping:99,freeShipping:999};
 const priceOf=p=>Number(String(p?.[1]??p?.price??0).replace(/[^0-9]/g,''))||0;
 const summary=document.getElementById('summary');
 if(!cart.length){summary.innerHTML='<p style="color:#777;font-size:11px;line-height:1.7">Your bag is empty. <a href="index.html">Return to shop</a>.</p>';document.querySelector('.checkout').disabled=true;}
@@ -111,12 +111,12 @@ async function initCheckout(){
   shipping=subtotal===0?0:(subtotal>=checkoutSettings.freeShipping?0:checkoutSettings.shipping);
   total=subtotal+shipping;
   if(cart.length)summary.innerHTML=cart.map(p=>`<div class="sumItem"><img src="${imageUrl(p[2])}" alt="${String(p[0]||'Product').replace(/[<>]/g,'')}" onerror="this.onerror=null;this.src='/photos/ornament.jpg'"><span>${p[0]}<small>${p[1]}${p.size?' · SIZE '+p.size:''}${p.color?' · '+p.color.toUpperCase():''} · QTY ${Number(p.qty||1)}</small></span></div>`).join('');
-  const freeNote=document.getElementById('freeShippingNote');if(freeNote)freeNote.textContent=(subtotal>=checkoutSettings.freeShipping?'✓ Free shipping unlocked.':'Free shipping on prepaid orders above '+money(checkoutSettings.freeShipping)+'.');document.getElementById('sumSubtotal').textContent=money(subtotal);
+  document.getElementById('sumSubtotal').textContent=money(subtotal);
   document.getElementById('sumShipping').textContent=shipping===0?(subtotal>=checkoutSettings.freeShipping?'FREE':'—'):money(shipping);
   document.getElementById('sumTotal').textContent=money(total);
 }
 initCheckout();
-async function applyCoupon(){const code=document.getElementById('couponCode').value.trim();if(!code)return;try{const r=await fetch('/api/coupons/validate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code,subtotal})});const d=await r.json();if(!r.ok)throw Error(d.error);discount=Number(d.discount||0);appliedCoupon=d.code;total=subtotal-discount+shipping;document.getElementById('sumTotal').textContent=money(total);document.getElementById('couponMsg').textContent='Coupon applied: '+money(discount)+' off';}catch(e){document.getElementById('couponMsg').textContent=e.message;discount=0;appliedCoupon='';total=subtotal+shipping;document.getElementById('sumTotal').textContent=money(total)}}
+async function applyCoupon(){const code=document.getElementById('couponCode').value.trim();if(!code)return;try{const customerToken=localStorage.getItem('yourTypeCustomerToken')||'';const headers={'Content-Type':'application/json'};if(customerToken)headers.Authorization='Bearer '+customerToken;const r=await fetch('/api/coupons/validate',{method:'POST',headers,body:JSON.stringify({code,subtotal,email:document.getElementById('customerEmail')?.value||'',phone:document.getElementById('customerPhone')?.value||''})});const d=await r.json();if(!r.ok)throw Error(d.error);discount=Number(d.discount||0);appliedCoupon=d.code;total=subtotal-discount+shipping;document.getElementById('sumTotal').textContent=money(total);document.getElementById('couponMsg').textContent='Coupon applied: '+money(discount)+' off';}catch(e){document.getElementById('couponMsg').textContent=e.message;discount=0;appliedCoupon='';total=subtotal+shipping;document.getElementById('sumTotal').textContent=money(total)}}
 function showUPIPopup(){
  const note=document.getElementById('upiNote');
  if(note) note.style.display='block';
