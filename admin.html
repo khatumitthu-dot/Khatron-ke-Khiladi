@@ -1101,8 +1101,18 @@ async function restoreServerBackup(){
   window.picHtml=function(p){const src=imageUrl(p?.image||(p?.images||[])[0]);return src?`<img src="${src}" alt="${esc(p?.name||'Product')}" style="width:100%;height:100%;object-fit:cover;display:block" onerror="this.style.display='none';this.parentElement.classList.add('img-fallback');this.parentElement.dataset.fallback='YT'">`:'<span>YT</span>'};
 
   function localProduct(p){const sizes=p.sizes||{};return {id:String(p.id),name:p.name||'',price:num(p.price),cost:num(p.cost),sku:p.sku||'',category:p.category||'T-Shirts',description:p.description||'',sizes:Object.keys(sizes).filter(k=>['S','M','L','XL','XXL'].includes(k)),colors:Array.isArray(p.colors)&&p.colors.length?p.colors:['Black','White','Charcoal'],images:Array.isArray(p.images)&&p.images.length?p.images:[p.image||''],image:p.image||((p.images||[])[0]||''),hidden:p.active===false,featured:Boolean(p.featured)}};
+  function dedupAddress(address,city,pin){
+    const base=String(address||'').trim();
+    const norm=s=>String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+    const baseNorm=norm(base);
+    const extra=[city,pin].filter(v=>{
+      const vNorm=norm(v);
+      return vNorm && !baseNorm.includes(vNorm);
+    });
+    return [base,...extra].filter(Boolean).join('\n');
+  }
   function localOrder(o){
-    if(o&&o.orderId){const it=Array.isArray(o.items)&&o.items[0]||{};return {id:o.orderId,customer:o.name||'',email:o.email||'',phone:o.phone||'',address:[o.address,o.city,o.pin].filter(Boolean).join('\n'),city:o.city||'',pin:o.pin||'',productId:(it.productId||'')||((state.products.find(p=>p.name===it.name&&p.image===it.image)||{}).id||''),size:it.size||'',color:it.color||'',qty:Number(it.qty||1),price:num(it.price),image:it.image||'',sku:it.sku||'',payment:o.payment||'cod',status:o.status||'New',verified:Boolean(o.verified),awb:o.awb||'',courier:o.courier||'',tracking_url:o.tracking_url||'',date:o.date||'',subtotal:o.subtotal,discount:o.discount,gst:o.gst,gstRate:o.gstRate,shipping:o.shipping,total:o.total,serverOrderId:o.orderId,items:Array.isArray(o.items)?o.items:[]};}
+    if(o&&o.orderId){const it=Array.isArray(o.items)&&o.items[0]||{};return {id:o.orderId,customer:o.name||'',email:o.email||'',phone:o.phone||'',address:dedupAddress(o.address,o.city,o.pin),city:o.city||'',pin:o.pin||'',productId:(it.productId||'')||((state.products.find(p=>p.name===it.name&&p.image===it.image)||{}).id||''),size:it.size||'',color:it.color||'',qty:Number(it.qty||1),price:num(it.price),image:it.image||'',sku:it.sku||'',payment:o.payment||'cod',status:o.status||'New',verified:Boolean(o.verified),awb:o.awb||'',courier:o.courier||'',tracking_url:o.tracking_url||'',date:o.date||'',subtotal:o.subtotal,discount:o.discount,gst:o.gst,gstRate:o.gstRate,shipping:o.shipping,total:o.total,serverOrderId:o.orderId,items:Array.isArray(o.items)?o.items:[]};}
     return o;
   }
 
