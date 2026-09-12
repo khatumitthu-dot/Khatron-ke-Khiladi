@@ -1178,20 +1178,26 @@ async function restoreServerBackup(){
 // behalf. This route must require admin login, same as every
 // other /api/admin/* route, so only logged-in admins can use it.
 // ---------------------------------------------------------
+// Direct YouTube Data API v3 search (API key is in this file — anyone who
+// views this page's source can read and reuse this key).
+const YT_MUSIC_API_KEY = 'AIzaSyD6yKVtt6z-2YLEYIihDEzaElGa_GwwiaY';
+
 function musicSearch(){
   const q = (document.getElementById('musicQuery')?.value || '').trim();
   const box = document.getElementById('musicResults');
   if(!q){ return; }
   box.innerHTML = '<p class="muted">Search ho raha hai...</p>';
-  api2('/api/admin/music-search?q='+encodeURIComponent(q))
+  fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=12&type=video&videoCategoryId=10&q=${encodeURIComponent(q)}&key=${YT_MUSIC_API_KEY}`)
+    .then(r => r.json())
     .then(d => {
+      if(d.error){ box.innerHTML = '<p class="muted">Error: '+fcEscapeMusic(d.error.message)+'</p>'; return; }
       const items = d.items || [];
       if(!items.length){ box.innerHTML = '<p class="muted">Kuch nahi mila, dusra naam try karein.</p>'; return; }
       box.innerHTML = items.map(it => {
-        const vid = it.videoId;
-        const title = fcEscapeMusic(it.title);
-        const thumb = it.thumbnail;
-        const channel = fcEscapeMusic(it.channelTitle||'');
+        const vid = it.id.videoId;
+        const title = fcEscapeMusic(it.snippet.title);
+        const thumb = it.snippet.thumbnails.default.url;
+        const channel = fcEscapeMusic(it.snippet.channelTitle);
         return `<div onclick="musicPlay('${vid}', decodeURIComponent('${encodeURIComponent(title)}'), '${thumb}')"
             style="display:flex;gap:10px;align-items:center;padding:8px;border-radius:10px;cursor:pointer;border:1px solid #1b2a3b;margin-bottom:6px;background:#09111a">
           <img src="${thumb}" alt="" style="width:56px;height:56px;border-radius:8px;object-fit:cover;flex-shrink:0">
@@ -1202,7 +1208,7 @@ function musicSearch(){
         </div>`;
       }).join('');
     })
-    .catch(e => { box.innerHTML = '<p class="muted">Search fail ho gaya: '+fcEscapeMusic(e.message||'server error')+'</p>'; });
+    .catch(() => { box.innerHTML = '<p class="muted">Search fail ho gaya. API key check karein.</p>'; });
 }
 
 function fcEscapeMusic(s){
