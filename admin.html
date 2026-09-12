@@ -1613,7 +1613,7 @@ function fcEscapeMusic(s){
         <div style="display:flex;justify-content:flex-end;padding:20px 34px">
           <div style="width:340px">
             ${totalRow('Subtotal',money(subtotal))}
-            ${totalRow('Discount',(discount>0?'- ':'')+money(discount))}
+            ${discount>0?totalRow('Discount','- '+money(discount)):''}
             ${totalRow('Shipping Charge',money(shipping))}
             <div style="display:flex;justify-content:space-between;align-items:center;background:#111;color:#fff;padding:14px 18px;margin-top:8px;border-radius:8px">
               <span style="font-weight:800;font-size:13px;letter-spacing:1px">GRAND TOTAL</span>
