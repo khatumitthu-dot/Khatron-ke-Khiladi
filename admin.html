@@ -304,11 +304,10 @@ button:active,.btn:active,.yt-quick-card:active{transform:scale(.97)!important}
 <div id="adminTabs" class="tabs" style="display:none"><button class="btn tab active" onclick="go('controlCenter',this)">Control Center</button>
 <button class="btn tab" onclick="go('dashboard',this)">Dashboard</button><button class="btn tab" onclick="go('orders',this)">Orders</button>
 <button class="btn tab" onclick="go('inventory',this)">Inventory</button><button class="btn tab" onclick="go('variants',this)">Variants</button><button class="btn tab" onclick="go('products',this)">Products</button>
-<button class="btn tab" onclick="go('customers',this)">Customers</button><button class="btn tab" onclick="go('diagnostics',this)">Diagnostics</button><button class="btn tab" onclick="go('reviews',this)">Reviews</button>
+<button class="btn tab" onclick="go('customers',this)">Customers</button><button class="btn tab" onclick="go('diagnostics',this)">Diagnostics</button><button class="btn tab" onclick="go('reviews',this)">Reviews</button><button class="btn tab" onclick="go('music',this)">🎵 Music</button>
 <button class="btn tab" onclick="go('coupons',this)">Coupons</button><button class="btn tab" onclick="go('returns',this)">Returns</button><button class="btn tab" onclick="go('categories',this)">Categories</button><button class="btn tab" onclick="go('wishlist',this)">Wishlist</button><button class="btn tab" onclick="go('website',this)">Website</button><button class="btn tab" onclick="go('sections',this)">Sections</button><button class="btn tab" onclick="go('colors',this)">Colors</button><button class="btn tab" onclick="go('reports',this)">Reports</button>
 <button class="btn tab" onclick="go('analytics',this)">Analytics</button><button class="btn tab" onclick="go('downloads',this)">Downloads</button>
 <button class="btn tab" onclick="go('settings',this)">Settings</button>
-<button class="btn tab" onclick="go('music',this)">🎵 Music</button>
 </div>
 
 <section id="dashboard" class="section">
@@ -514,7 +513,7 @@ button:active,.btn:active,.yt-quick-card:active{transform:scale(.97)!important}
 <div class="box"><b>🎵 Music</b><p class="muted">Search and play music while you work.</p><button class="btn primary" onclick="go('music')">Open</button></div></div></section>
 <section id="music" class="section">
   <h2>🎵 Music</h2>
-  <p class="muted">YouTube se gaane search karke suniye — sirf aap yahan se access kar sakte hain, koi file upload nahi karni.</p>
+  <p class="muted">Gaane search karke suniye — sirf admin login ke peeche, safe tareeke se (API key server par chhupi hai).</p>
   <div class="tabs">
     <input class="search" id="musicQuery" placeholder="Gaana ya artist search karein..." onkeydown="if(event.key==='Enter'){event.preventDefault();musicSearch()}">
     <button class="btn primary" onclick="musicSearch()">Search</button>
@@ -531,16 +530,10 @@ button:active,.btn:active,.yt-quick-card:active{transform:scale(.97)!important}
 window.num=window.num||function(v){return Number(String(v??0).replace(/[^0-9.-]/g,''))||0};
 const KEY='YOUR_TYPE_ADMIN_V1';
 let state=JSON.parse(localStorage.getItem(KEY)||'null')||{
- products:[
-  {id:'p1',name:'YOUR TYPE Oversized Tee',category:'T-Shirt',price:1299,cost:520,sku:'YT-TEE-001',sizes:['S','M','L','XL','XXL'],images:[]},
-  {id:'p2',name:'YOUR TYPE Signature Shirt',category:'Shirt',price:1699,cost:780,sku:'YT-SHIRT-001',sizes:['S','M','L','XL','XXL'],images:[]}
- ],
- inventory:[
-  ['p1','S',12,5],['p1','M',18,5],['p1','L',14,5],['p1','XL',9,5],['p1','XXL',5,5],
-  ['p2','S',8,5],['p2','M',7,5],['p2','L',3,5],['p2','XL',0,5],['p2','XXL',2,5]
- ],
+ products:[],
+ inventory:[],
  orders:[],
- history:[], coupons:[{code:'WELCOME10',percent:10,min:999,expiry:'2026-12-31',active:true}],
+ history:[], coupons:[],
  settings:{gst:5,shipping:99,freeShipping:1999}, categories:['T-Shirt','Shirt'], website:{announcement:'New drops every week',hero:'YOUR TYPE',featured:[],sectionProducts:{},social:'',phone:'',email:''}, wishlist:[]
 };
 function getAdminToken(){return sessionStorage.getItem('adminToken')||localStorage.getItem('adminToken')||''}
@@ -566,8 +559,6 @@ function adminLogin(){
   </form>`);
   requestAnimationFrame(()=>document.getElementById('loginUser')?.focus());
 }
-async function doAdminLogin(){const username=String(document.getElementById("loginUser")?.value||"").trim(),password=String(document.getElementById("loginPass")?.value||"");if(!username||!password){toast("Enter username and password");return}try{const r=await fetch("/api/admin/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username,password})}),x=await r.json();if(!r.ok){toast(x.error||"Login failed");return}sessionStorage.setItem("adminToken",x.token);closeModal();await loadServerState();go("dashboard")}catch(e){toast("Unable to connect to server")}}
-
 function adminHeaders(){const t=getAdminToken();return t?{'Content-Type':'application/json','Authorization':'Bearer '+t}:{'Content-Type':'application/json'}}
 // Global server API helper: older admin sections call api2() directly.
 window.api2=window.api2||async function(url,opt={}){
@@ -582,9 +573,6 @@ window.api2=window.api2||async function(url,opt={}){
   }
   return d;
 };
-async function loadServerState(){const t=getAdminToken();if(!t)return;try{const r=await fetch('/api/admin/data',{headers:{Authorization:'Bearer '+t},cache:'no-store'});if(!r.ok)return;const d=await r.json();if(Array.isArray(d.products)){state.products=d.products.map(p=>({id:p.id,name:p.name,price:Number(String(p.price||'').replace(/[^0-9.]/g,''))||0,cost:Number(p.cost||0),sku:p.sku||'',category:p.category||'T-Shirts',description:p.description||'',sizes:Object.keys(p.sizes||{}).filter(k=>['S','M','L','XL','XXL'].includes(k)),colors:Array.isArray(p.colors)&&p.colors.length?p.colors:['Black','White','Charcoal'],images:p.images&&p.images.length?p.images:[p.image],hidden:p.active===false,featured:Boolean(p.featured),sections:Array.isArray(p.sections)?p.sections:[]}));state.inventory=[];state.products.forEach(p=>Object.entries(d.products.find(x=>x.id===p.id)?.sizes||{}).forEach(([sz,n])=>state.inventory.push([p.id,sz,Number(n||0),5])));state.categories=Array.from(new Set(state.products.map(p=>p.category).filter(Boolean)));save();renderProducts();renderInventory();filterStore('all');}const sr=await fetch('/api/site-config',{cache:'no-store'});if(sr.ok){const sd=await sr.json();state.website={...(state.website||{}),...(sd.site||{})};state.sectionSettings=(sd.site&&sd.site.sections)||state.sectionSettings;save();}}catch(e){console.warn('Server sync failed',e)}}
-async function serverPatchProduct(id,payload){const t=getAdminToken();if(!t)return false;try{const r=await fetch('/api/admin/products/'+encodeURIComponent(id),{method:'PATCH',headers:adminHeaders(),body:JSON.stringify(payload)});if(!r.ok)return false;return true}catch(e){return false}}
-async function serverCreateProduct(p){const t=getAdminToken();if(!t)return false;try{const payload={name:p.name,price:String(p.price),image:(p.images&&p.images[0]&&String(p.images[0]).startsWith('data:'))?'':(p.images&&p.images[0]||''),images:p.images||[],sizes:Object.fromEntries((p.sizes||[]).map(sz=>[sz,Number(p._stock||0)])),category:p.category||'T-Shirts',colors:p.colors||[]};const r=await fetch('/api/admin/products',{method:'POST',headers:adminHeaders(),body:JSON.stringify(payload)});return r.ok}catch(e){return false}}
 function colorCss(name){const n=String(name||'').toLowerCase().replace(/\s+/g,'');const map={black:'#000',white:'#fff',red:'#e53935',blue:'#2878ff',green:'#22a65a',yellow:'#f1c40f',orange:'#f39c12',purple:'#8e44ad',pink:'#ff5c8a',brown:'#8b5a2b',grey:'#777',gray:'#777',charcoal:'#333',cream:'#f1e5c8',beige:'#d8c3a5'};return map[n]||'#555'}
 function renderSectionManager(){
  const defaults={
@@ -623,7 +611,6 @@ async function saveSectionSettings(){
 function syncColorManager(){const palette=state.colorPalette||['Black','White','Charcoal','Red','Blue','Green'];globalColors.value=palette.join(', ');globalColorPreview.innerHTML=palette.map(c=>`<span class=swatch><i style="background:${colorCss(c)}"></i>${c}</span>`).join('');colorProduct.innerHTML=state.products.map(p=>`<option value="${p.id}">${p.name}</option>`).join('');loadProductColors()}
 function loadProductColors(){const p=prod(colorProduct.value)||state.products[0];if(!p)return;productColors.value=(p.colors||['Black','White','Charcoal']).join(', ');productColorPreview.innerHTML=(p.colors||[]).map(c=>`<span class=swatch><i style="background:${colorCss(c)}"></i>${c}</span>`).join('')}
 async function saveGlobalColors(){state.colorPalette=(globalColors.value||'').split(',').map(x=>x.trim()).filter(Boolean);save();syncColorManager();toast('Global color palette saved')}
-async function saveProductColors(){const p=prod(colorProduct.value);if(!p)return;p.colors=(productColors.value||'').split(',').map(x=>x.trim()).filter(Boolean);save();const ok=await serverPatchProduct(p.id,{colors:p.colors});syncColorManager();toast(ok?'Product colors saved to website':'Product colors saved locally — login/server sync required')}
 function filterStore(cat){let a=(cat==='all'?state.products:state.products.filter(p=>p.category===cat)).filter(p=>!p.hidden);storeGrid.innerHTML=a.map(p=>{let stock=state.inventory.filter(x=>x[0]===p.id).reduce((a,x)=>a+x[2],0);return `<div class=card><div class=pic>${picHtml(p)}</div><div class=info><b>${p.name}</b><p class=muted>${p.category} · SKU ${p.sku}</p><b>${money(p.price)}</b><p>${stock?stock+' units available':'❌ Out of stock'}</p><button class=btn ${stock?'':'danger'} onclick="buy('${p.id}')">${stock?'View / Order':'Out of Stock'}</button></div></div>`}).join('')}
 function buy(id){let p=prod(id),sizes=state.inventory.filter(x=>x[0]===id&&x[2]>0).map(x=>x[1]);if(!sizes.length){toast('This product is out of stock');return}openModal(`<h2>${p.name}</h2><div class=pic style="border-radius:9px">${picHtml(p)}</div><p>${money(p.price)} · SKU ${p.sku}</p><select id=bs>${sizes.map(x=>`<option>${x}</option>`).join('')}</select><input id=bq2 type=number value=1 min=1 max=99><input id=bcustomer value=""><input id=bphone value=""><textarea id=baddress placeholder="Full delivery address">
 Delhi — 110001
@@ -646,7 +633,6 @@ function validateAddress(){openModal(`<h2>Address Validation</h2><div class=addr
 function renderInventory(){let q=(isearch?.value||'').toLowerCase(),a=state.inventory.filter(x=>{let p=prod(x[0]);return((p?.name||'')+' '+(p?.sku||'')+' '+x[1]).toLowerCase().includes(q)});invTable.innerHTML=a.map(x=>{let p=prod(x[0]);return `<div class=row><span><b>${p?.name}</b><br><span class=muted>${p?.sku} · Size ${x[1]}</span></span><span><b>${x[2]}</b> ${x[2]===0?'❌':x[2]<=x[3]?'⚠️':'✓'}<br><button class=btn onclick="quick('${x[0]}','${x[1]}',1)">+1</button><button class=btn onclick="quick('${x[0]}','${x[1]}',-1)">−1</button></span></div>`}).join('');
 units.textContent=state.inventory.reduce((a,x)=>a+x[2],0);low.textContent=state.inventory.filter(x=>x[2]>0&&x[2]<=x[3]).length;out.textContent=state.inventory.filter(x=>x[2]===0).length;skuCount.textContent=new Set(state.inventory.map(x=>prod(x[0])?.sku)).size;
 ip.innerHTML=state.products.map(p=>`<option value="${p.id}">${p.name}</option>`).join('');bp.innerHTML=ip.innerHTML;historyList.innerHTML=state.history.length?state.history.slice().reverse().map(h=>`<div class=row><span>${h.time}<br>${h.p} · ${h.s}</span><span>${h.from} → ${h.to}<br><span class=muted>${h.r}</span></span></div>`).join(''):'<p class=muted>No stock changes yet.</p>'}
-function stockUpdate(){let x=state.inventory.find(x=>x[0]===ip.value&&x[1]===is.value),q=Math.max(0,+iq.value||0);if(!x){toast('Size inventory not found');return}let before=x[2];if(ia.value==='add')x[2]+=q;else if(ia.value==='remove')x[2]=Math.max(0,x[2]-q);else x[2]=q;x[3]=Math.max(0,+it.value||0);state.history.push({time:new Date().toLocaleString(),p:prod(x[0]).name,s:x[1],from:before,to:x[2],r:ir.value||'Manual adjustment'});save();renderInventory();filterStore('all');toast('Inventory saved')}
 function quick(id,size,d){let x=state.inventory.find(x=>x[0]===id&&x[1]===size),b=x[2];x[2]=Math.max(0,x[2]+d);state.history.push({time:new Date().toLocaleString(),p:prod(id).name,s:size,from:b,to:x[2],r:'Quick adjustment'});save();renderInventory();filterStore('all');toast('Stock updated')}
 function bulk(){let id=bp.value,q=Math.max(0,+bq.value||0);state.inventory.filter(x=>x[0]===id).forEach(x=>{let b=x[2];x[2]=q;state.history.push({time:new Date().toLocaleString(),p:prod(id).name,s:x[1],from:b,to:q,r:'Bulk update'})});save();renderInventory();filterStore('all');toast('All sizes updated')}
 function margin(p){let g=+state.settings.gst||0,base=p.price/(1+g/100),gstAmt=p.price-base,cost=+p.cost||0,profit=base-cost,pct=base>0?(profit/base*100):0;return{base,gstAmt,cost,profit,pct}}
@@ -654,16 +640,10 @@ function picHtml(p){return p.images&&p.images.length?`<img src="${esc(p.images[0
 function renderProducts(q=''){let term=String(q||'').toLowerCase();let arr=state.products.filter(p=>!term||[p.name,p.sku,p.category].some(v=>String(v||'').toLowerCase().includes(term)));productGrid.innerHTML=arr.map(p=>{let m=margin(p);return `<div class=card style="opacity:${p.hidden?.55:1}"><div class=pic>${picHtml(p)}</div><div class=info><label><input type=checkbox class=pselect value="${p.id}"> Select</label><b>${p.name}</b><p class=muted>${p.category} · SKU ${p.sku}</p><b>${money(p.price)}</b><p>Sizes: ${(p.sizes||[]).join(', ')}</p><p>Colors: ${(p.colors||['Black']).join(', ')}</p><p>${p.hidden?'🙈 Hidden':'👁️ Visible'} · ${p.featured?'⭐ Featured':''}</p><div class=box style="margin:8px 0;padding:8px"><p class=muted style="margin:0">Base (excl. GST): ${money(m.base)} · GST: ${money(m.gstAmt)}</p><p class=muted style="margin:4px 0 0">Cost: ${money(m.cost)} · Profit: <b>${money(m.profit)}</b> (${m.pct.toFixed(1)}% margin)</p></div><button class=btn onclick="editProduct('${p.id}')">Edit</button><button class=btn onclick="toggleProduct('${p.id}')">${p.hidden?'Show':'Hide'}</button><button class=btn onclick="toggleFeatured('${p.id}')">${p.featured?'Unfeature':'Featured'}</button><button class=btn danger onclick="deleteProduct('${p.id}')">Delete</button></div></div>`}).join('')||'<div class="notice">No products found.</div>'}
 function selectedProductIds(){return [...document.querySelectorAll('.pselect:checked')].map(x=>x.value)}
 async function legacyBulkProducts(action){let ids=selectedProductIds();if(!ids.length){toast('Select products first');return}if(action==='delete'&&!confirm('Delete selected products?'))return;let ok=false;const t=getAdminToken();if(t){try{const r=await fetch('/api/admin/products/bulk',{method:'POST',headers:adminHeaders(),body:JSON.stringify({ids,action})});ok=r.ok}catch(e){}}ids.forEach(id=>{let p=prod(id);if(!p)return;if(action==='delete'){state.products=state.products.filter(x=>x.id!==id);state.inventory=state.inventory.filter(x=>x[0]!==id)}else p.hidden=action==='hide'});save();renderProducts(productSearch?.value||'');renderInventory();filterStore('all');toast(ok?'Bulk product update applied to website':'Bulk product update saved locally')}
-async function toggleProduct(id){let p=prod(id);if(!p)return;const next=!p.hidden;const ok=await serverPatchProduct(id,{active:!next});p.hidden=next;save();renderProducts(productSearch?.value||'');filterStore('all');toast(ok?(p.hidden?'Product hidden on website':'Product shown on website'):(p.hidden?'Product hidden locally':'Product shown locally'))}
-function legacyToggleFeatured(id){let p=prod(id);if(!p)return;p.featured=!p.featured;save();renderProducts(productSearch?.value||'');toast(p.featured?'Featured product enabled':'Featured product disabled')}
 function addProduct(){openModal(`<h2>Add Product</h2><input id=np placeholder="Product name"><input id=nsku placeholder="SKU"><input id=nprice type=number placeholder="Selling Price (incl. GST)"><input id=ncost type=number placeholder="Cost Price (what it costs you)"><select id=ncat><option>T-Shirt</option><option>Shirt</option></select><input id=nsizes value="S,M,L,XL,XXL" placeholder="Sizes, e.g. S,M,L,XL,XXL"><input id=ncolors value="Black,White,Charcoal" placeholder="Colors, comma separated"><input id=nstock type=number value=0 placeholder="Opening stock per size"><input type=file id=nimg multiple accept="image/*"><textarea id=ndesc placeholder="Description"></textarea><button class="btn primary" onclick="saveProduct()">Save Product</button>`)}
 function filesToDataUrls(fileList){let files=Array.from(fileList||[]);return Promise.all(files.map(f=>new Promise((res,rej)=>{let r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f)})))}
-async function saveProduct(){let id='p'+Date.now(),sizes=(nsizes.value||'S,M,L,XL,XXL').split(',').map(x=>x.trim()).filter(Boolean),colors=(ncolors.value||'Black,White,Charcoal').split(',').map(x=>x.trim()).filter(Boolean),images=await filesToDataUrls(nimg.files),p={id,name:np.value||'New Product',sku:nsku.value||('YT-'+Date.now()),price:+nprice.value||0,cost:+ncost.value||0,category:ncat.value,description:ndesc.value||'',sizes,colors,images};state.products.push(p);sizes.forEach(sz=>state.inventory.push([id,sz,Math.max(0,+nstock.value||0),5]));state.variantStock=state.variantStock||{};state.variantStock[id]={};colors.forEach(c=>{state.variantStock[id][c]={};sizes.forEach(sz=>state.variantStock[id][c]=Object.assign(state.variantStock[id][c]||{},{[sz]:Math.max(0,+nstock.value||0)}))});save();closeModal();renderProducts();renderInventory();renderVariantManager();filterStore('all');toast('Product created with size/color variants')}
 function editProduct(id){let p=prod(id);openModal(`<h2>Edit Product</h2><input id=en value="${p.name}"><input id=es value="${p.sku}"><input id=ep type=number value="${p.price}" placeholder="Selling Price (incl. GST)"><input id=ecost type=number value="${p.cost||0}" placeholder="Cost Price (what it costs you)"><input id=ec value="${p.category}"><input id=ez value="${(p.sizes||[]).join(',')}" placeholder="Sizes"><input id=ecolors value="${(p.colors||['Black','White','Charcoal']).join(',')}" placeholder="Colors"><input type=file id=ei multiple accept="image/*"><textarea id=edesc placeholder="Description">${p.description||''}</textarea><button class="btn primary" onclick="saveEdit('${id}')">Save Changes</button>`)}
-async function saveEdit(id){let p=prod(id),newImages=await filesToDataUrls(ei.files);p.name=en.value||p.name;p.sku=es.value||p.sku;p.price=+ep.value||0;p.cost=+ecost.value||0;p.category=ec.value||p.category;p.sizes=ez.value.split(',').map(x=>x.trim()).filter(Boolean);p.colors=ecolors.value.split(',').map(x=>x.trim()).filter(Boolean);p.description=edesc.value||p.description;if(newImages.length){p.images=(p.images||[]).concat(newImages)}const serverOk=await serverPatchProduct(id,{name:p.name,price:String(p.price),cost:p.cost,category:p.category,colors:p.colors,sizes:Object.fromEntries(p.sizes.map(sz=>[sz,Number((state.inventory.find(x=>x[0]===id&&x[1]===sz)||[])[2]||0)])),description:p.description,featured:Boolean(p.featured),active:!p.hidden,image:(p.images&&p.images[0]&&!String(p.images[0]).startsWith('data:'))?p.images[0]:undefined});state.variantStock=state.variantStock||{};let old=state.variantStock[id]||{};state.variantStock[id]={};p.colors.forEach(c=>{state.variantStock[id][c]={};p.sizes.forEach(sz=>{state.variantStock[id][c][sz]=Number(old[c]?.[sz]??0)})});p.sizes.forEach(sz=>{if(!state.inventory.some(x=>x[0]===id&&x[1]===sz))state.inventory.push([id,sz,0,5])});state.inventory=state.inventory.filter(x=>x[0]!==id||p.sizes.includes(x[1]));save();closeModal();renderProducts();renderInventory();renderVariantManager();filterStore('all');toast('Product and variants updated')}
-async function deleteProduct(id){if(!confirm('Delete this product?'))return;const ok=await fetch('/api/admin/products/'+encodeURIComponent(id),{method:'DELETE',headers:adminHeaders()}).then(r=>r.ok).catch(()=>false);state.products=state.products.filter(p=>p.id!==id);state.inventory=state.inventory.filter(x=>x[0]!==id);save();renderProducts();renderInventory();filterStore('all');toast(ok?'Product deleted from website':'Product deleted locally')}
 function renderVariantManager(){const sel=document.getElementById('vp');if(!sel)return;if(!sel.options.length)sel.innerHTML=state.products.map(p=>`<option value="${p.id}">${p.name}</option>`).join('');let p=prod(sel.value)||state.products[0];if(!p){variantManager.innerHTML='<div class=notice>No products yet.</div>';return}sel.value=p.id;state.variantStock=state.variantStock||{};let vs=state.variantStock[p.id]||{};let colors=p.colors||['Black'];let sizes=p.sizes||['S','M','L','XL','XXL'];variantManager.innerHTML=`<div class=notice style="margin-bottom:10px"><b>${p.name}</b><br><span class=muted>These are the same size/color choices used by the storefront cart.</span></div><div style="overflow:auto"><table style="width:100%;border-collapse:collapse"><tr><th style="text-align:left;padding:8px">Color / Size</th>${sizes.map(sz=>`<th style="padding:8px">${sz}</th>`).join('')}</tr>${colors.map(c=>`<tr><td style="padding:8px;border-top:1px solid #292929"><b>${c}</b></td>${sizes.map(sz=>`<td style="padding:4px;border-top:1px solid #292929"><input id="vs_${p.id}_${btoa(c).replace(/=/g,'')}_${sz}" type="number" min="0" value="${Number(vs[c]?.[sz]??0)}" style="min-width:70px"></td>`).join('')}</tr>`).join('')}</table></div><button class="btn primary" style="margin-top:10px" onclick="saveVariantManager('${p.id}')">Save Variant Stock</button>`}
-function saveVariantManager(id){let p=prod(id);if(!p)return;state.variantStock=state.variantStock||{};state.variantStock[id]={};let sizes=p.sizes||[],colors=p.colors||['Black'];colors.forEach(c=>{state.variantStock[id][c]={};sizes.forEach(sz=>{let key='vs_'+id+'_'+btoa(c).replace(/=/g,'')+'_'+sz;state.variantStock[id][c][sz]=Math.max(0,+document.getElementById(key)?.value||0)});});save();renderVariantManager();toast('Variant stock saved')}
 function syncVariantTab(){const sel=document.getElementById('vp');if(sel){sel.innerHTML=state.products.map(p=>`<option value="${p.id}">${p.name}</option>`).join('');renderVariantManager()}}
 function renderCoupons(){couponList.innerHTML=state.coupons.map((c,i)=>`<div class=box style="margin:10px 0"><b>${esc(c.code)}</b><p class=muted>${num(c.value??c.percent)}% off · Min order ${money(num(c.minOrder??c.min))}${num(c.maxDiscount)>0?' · Max discount '+money(num(c.maxDiscount)):''} · Expires ${esc(c.expiresAt||c.expiry||'—')} · ${c.active?'Active':'Inactive'}</p><button class=btn onclick="editCoupon(${i})">Edit</button><button class=btn onclick="toggleCoupon(${i})">${c.active?'Disable':'Enable'}</button><button class=btn danger onclick="deleteCoupon(${i})">Delete</button></div>`).join('')||'<div class=muted>No coupons yet.</div>'}
 function createCoupon(){openModal(`<h2>Create Coupon</h2><label>Coupon / voucher name (min 3 letters)</label><input id=cc value="BIRTHDAY20" placeholder="e.g. BIRTHDAY20"><label>Discount %</label><input id=cp type=number min=1 max=100 value="20" placeholder="Discount %"><label>Minimum order amount (₹)</label><input id=cm type=number min=0 value="999" placeholder="Minimum order"><label>Maximum discount cap (₹, optional)</label><input id=cmx type=number min=0 value="0" placeholder="0 = no cap"><label>Expiry date</label><input id=ce type=date value="2026-12-31"><button class=btn primary onclick="saveCoupon()">Create</button>`)}
@@ -671,13 +651,10 @@ function legacySaveCoupon(){state.coupons.push({code:cc.value.toUpperCase(),perc
 function editCoupon(i){let c=state.coupons[i];openModal(`<h2>Edit Coupon</h2><input id=cc value="${c.code}"><input id=cp type=number value="${c.percent}"><input id=cm type=number value="${c.min}"><input id=ce type=date value="${c.expiry}"><button class=btn primary onclick="state.coupons[${i}]={code:cc.value.toUpperCase(),percent:+cp.value,min:+cm.value,expiry:ce.value,active:true};save();closeModal();renderCoupons();toast('Coupon saved')">Save</button>`)}
 function legacyToggleCoupon(i){state.coupons[i].active=!state.coupons[i].active;save();renderCoupons();toast('Coupon updated')}
 function ret(s){let a=+refundAmount.value||0,m=refundMethod.value;returnStatus.textContent=s+(s==='Refund Initiated'?` · ${money(a)} · ${m}`:'');toast('Return: '+s)}
-function legacyReplyReview(){openModal(`<h2>Reply to Review</h2><textarea placeholder="Write your reply"></textarea><button class=btn primary onclick="toast('Reply saved');closeModal()">Send Reply</button>`)}
 function legacyProfile(){openModal(`<h2>Edit Customer</h2><input value=""><input value=""><textarea>
 Model Town, Delhi
 Delhi — 110009</textarea><button class=btn primary onclick="toast('Customer saved');closeModal()">Save</button>`)}
 window.profile=window.profile||legacyProfile;
-function legacyGateway(){let g=state.settings.gateway||{};openModal(`<h2>Payment Gateway</h2><select id=gwProvider>${['Razorpay','Cashfree','Stripe'].map(p=>`<option ${g.provider===p?'selected':''}>${p}</option>`).join('')}</select><input id=gwKey placeholder="Key ID" value="${g.keyId||''}"><input id=gwSecret type=password placeholder="Secret key (do not put real key in frontend)"><p class=muted>Secret keys are configured server-side and are not stored in the browser.</p><button class=btn primary onclick="state.settings.gateway={provider:gwProvider.value,keyId:gwKey.value};save();toast('Gateway settings saved');closeModal()">Save</button>`)}
-function legacyCourier(){let c=state.settings.courier||{};openModal(`<h2>Courier / AWB</h2><select id=courierProvider>${['Shiprocket','Delhivery'].map(p=>`<option ${c.provider===p?'selected':''}>${p}</option>`).join('')}</select><input id=courierKey placeholder="API key stored server-side in production" value="${c.keyLabel||''}"><button class=btn primary onclick="state.settings.courier={provider:courierProvider.value,keyLabel:courierKey.value};save();toast('Courier settings saved');closeModal()">Save</button>`)}
 function legacyNotifications(){let n=state.settings.notifications||{order:true,shipping:true,delivery:true,whatsapp:false};openModal(`<h2>Notifications</h2><label><input type=checkbox id=noOrder ${n.order?'checked':''}> Order confirmation</label><br><label><input type=checkbox id=noShip ${n.shipping?'checked':''}> Shipping update</label><br><label><input type=checkbox id=noDeliver ${n.delivery?'checked':''}> Delivery update</label><br><label><input type=checkbox id=noWhatsapp ${n.whatsapp?'checked':''}> WhatsApp</label><br><button class=btn primary onclick="state.settings.notifications={order:noOrder.checked,shipping:noShip.checked,delivery:noDeliver.checked,whatsapp:noWhatsapp.checked};save();toast('Notification preferences saved');closeModal()">Save</button>`)}
 function legacySecurity(){let s=state.settings.role||'Super Admin';openModal(`<h2>Security / Roles</h2><select id=roleSel>${['Super Admin','Order Manager','Inventory Manager','Support'].map(r=>`<option ${s===r?'selected':''}>${r}</option>`).join('')}</select><p class=muted>Production server uses password hashing, sessions and role checks.</p><button class=btn primary onclick="state.settings.role=roleSel.value;save();toast('Role saved');closeModal()">Save</button>`)}
 function gstProfitCalculator(){
@@ -731,47 +708,15 @@ function calcGSTProfit(){
 function legacyInvoiceById(id){let o=state.orders.find(x=>x.id===id),p=prod(o.productId);downloadText('YOUR_TYPE_INVOICE_'+id.replace('#','')+'.txt',`YOUR TYPE INVOICE\\nOrder: ${o.id}\\nCustomer: ${o.customer}\\nProduct: ${p?.name}\\nSKU: ${p?.sku}\\nSize: ${o.size}\\nQuantity: ${o.qty}\\nSubtotal: ${money(o.price*o.qty)}\\nGST: ${state.settings.gst}%\\nPayment: ${o.payment}\\nStatus: ${o.status}\\nAddress:\\n${o.address}`)}
 function invoice(){if(state.orders[0])invoiceById(state.orders[0].id);else toast('No order available')}
 function latestAddressSlip(){if(state.orders[0])addressSlip(state.orders[0].id);else toast('No order available')}
-function legacyDownloadOrders(){downloadText('YOUR_TYPE_ORDERS.csv','Order,Customer,Product,Size,Qty,Total,Status\\n'+state.orders.map(o=>`${o.id},${o.customer},${prod(o.productId)?.name},${o.size},${o.qty},${o.price*o.qty},${o.status}`).join('\\n'),'text/csv')}
 function downloadInventory(){downloadText('YOUR_TYPE_INVENTORY.csv','Product,SKU,Size,Stock,Threshold,Status\\n'+state.inventory.map(x=>{let p=prod(x[0]);return `${p?.name},${p?.sku},${x[1]},${x[2]},${x[3]},${x[2]===0?'OUT':x[2]<=x[3]?'LOW':'OK'}`}).join('\\n'),'text/csv')}
-function legacyDownloadReport(){let g=+state.settings.gst||0,live=state.orders.filter(o=>o.status!=='Cancelled'),rev=live.reduce((a,o)=>a+o.price*o.qty,0),gstTotal=0,profitTotal=0;live.forEach(o=>{let p=prod(o.productId),base=o.price/(1+g/100),cost=p?(+p.cost||0):0;gstTotal+=(o.price-base)*o.qty;profitTotal+=(base-cost)*o.qty});downloadText('YOUR_TYPE_SALES_REPORT.csv','Date,Orders,Revenue,GST Collected,Profit (Est.)\n'+new Date().toLocaleDateString()+','+live.length+','+rev+','+gstTotal.toFixed(2)+','+profitTotal.toFixed(2),'text/csv')}
 function downloadManual(){downloadText('YOUR_TYPE_STORE_MANUAL.txt','YOUR TYPE STORE MANUAL\\n\\nCustomer: Browse → choose size → place order → My Orders.\\nAdmin: Dashboard → Orders → Inventory → Products → Customers → Reports.\\nInventory is size/SKU based and order placement deducts stock.\\nProduction: deploy the included Node/SQLite backend, configure secrets in .env, payment/courier/notification providers, domain and legal pages.')}
 function pdfSafe(s){return String(s).replace(/₹/g,'Rs. ').replace(/[—–]/g,'-').replace(/[""]/g,'"').replace(/['']/g,"'").replace(/[()\\]/g,'').replace(/[^\x20-\x7e]/g,'?')}
 function makePdf(titleLine,bodyLines){let stream='BT /F1 16 Tf 72 790 Td ('+pdfSafe(titleLine)+') Tj 0 -26 TD /F1 11 Tf '+bodyLines.map(l=>l===''?'0 -14 TD':`(${pdfSafe(l)}) Tj 0 -16 TD`).join(' ')+' ET';let objs=['<< /Type /Catalog /Pages 2 0 R >>','<< /Type /Pages /Kids [3 0 R] /Count 1 >>','<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>',`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'];let pdf='%PDF-1.4\n',offsets=[0];objs.forEach((o,i)=>{offsets.push(pdf.length);pdf+=`${i+1} 0 obj\n${o}\nendobj\n`});let xrefStart=pdf.length;pdf+=`xref\n0 ${objs.length+1}\n0000000000 65535 f \n`;for(let i=1;i<=objs.length;i++)pdf+=String(offsets[i]).padStart(10,'0')+' 00000 n \n';pdf+=`trailer\n<< /Size ${objs.length+1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`;return pdf}
 function downloadPDF(){let bodyLines=state.products.map(p=>`${p.name} — ${money(p.price)} — SKU ${p.sku}`);downloadText('YOUR_TYPE_PRODUCT_BROCHURE.pdf',makePdf('YOUR TYPE — Product Brochure',bodyLines),'application/pdf')}
-function addressSlip(id){let o=state.orders.find(x=>x.id===id);if(!o){toast('Order not found');return}let p=prod(o.productId);let bodyLines=['Order: '+o.id,'Date: '+o.date,'',
-'BILL TO / SHIP TO',o.customer,...o.address.split('\n'),'Phone: '+o.phone,'',
-'PRODUCT DETAILS',`${p?.name||'Deleted Product'}  (SKU ${p?.sku||'—'})`,`Size: ${o.size}   Qty: ${o.qty}`,`Unit Price: ${money(o.price)}   Total: ${money(o.price*o.qty)}`,`Payment: ${o.payment}   Status: ${o.status}`,
-o.awb?`AWB: ${o.awb}${o.courier?' ('+o.courier+')':''}`:''].filter(l=>l!=='');
-downloadText('YOUR_TYPE_ADDRESS_SLIP_'+id.replace('#','')+'.pdf',makePdf('YOUR TYPE — Address / Packing Slip',bodyLines),'application/pdf')}
 function backup(){downloadText('YOUR_TYPE_BACKUP.json',JSON.stringify(state,null,2),'application/json')}
 function restore(){openModal(`<h2>Restore Data</h2><input type=file id=restoreFile accept=".json"><button class=btn primary onclick="doRestore()">Restore</button>`)}
 function doRestore(){let f=restoreFile.files[0];if(!f){toast('Choose backup file');return}let r=new FileReader();r.onload=()=>{try{state=JSON.parse(r.result);save();closeModal();location.reload()}catch(e){toast('Invalid backup')}};r.readAsText(f)}
 function downloadText(n,t,type='text/plain'){let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([t],{type}));a.download=n;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);toast('Download started')}
-function updateDash(){
-  const orders=Array.isArray(state.orders)?state.orders:[],
-    live=orders.filter(o=>o.status!=='Cancelled'),
-    rev=live.reduce((s,o)=>s+orderRevenue(o),0),
-    lowN=(state.inventory||[]).filter(x=>num(x[2])>0&&num(x[2])<=num(x[3]||5)).length;
-  let gstTotal=0,profitTotal=0;
-  live.forEach(o=>{
-    const g=num(state.settings?.gst||5),
-      base=orderRevenue(o)/(1+g/100),
-      gstAmt=orderRevenue(o)-base,
-      p=prod(o.productId),
-      cost=p?(+p.cost||0):0;
-    gstTotal+=gstAmt;
-    profitTotal+=(base-cost);
-  });
-  if(typeof dashRevenue!=='undefined')dashRevenue.textContent=money(rev);
-  if(typeof dashOrders!=='undefined')dashOrders.textContent=orders.length;
-  if(typeof dashLow!=='undefined')dashLow.textContent=lowN;
-  if(typeof dashProfit!=='undefined')dashProfit.textContent=money(profitTotal);
-  if(typeof aRev!=='undefined')aRev.textContent=money(rev);
-  if(typeof aGst!=='undefined')aGst.textContent=money(gstTotal);
-  if(typeof aProfit!=='undefined')aProfit.textContent=money(profitTotal);
-  if(typeof aAvg!=='undefined')aAvg.textContent=money(live.length?rev/live.length:0);
-}
-
 function toast(t){let e=document.getElementById('toast');e.textContent=t;e.style.display='block';clearTimeout(window._t);window._t=setTimeout(()=>e.style.display='none',1800)}
 function openModal(x){modalBody.innerHTML=x;modal.classList.add('on')}function closeModal(){modal.classList.remove('on')}
 async function saveCategoriesToServer(){await api2('/api/admin/categories',{method:'PATCH',body:JSON.stringify({categories:state.categories})})}
@@ -864,232 +809,6 @@ async function restoreServerBackup(){
   }catch(e){toast(e.message)}
 }
 </script>
-<script>
-/* YOUR TYPE — SERVER CONNECTION BRIDGE
-   Keeps the original Admin UI/layout, but makes data mutations use the same server
-   database that the storefront reads from. LocalStorage remains only as a UI cache.
-*/
-(function(){
-  const api = async (url, options={}) => {
-    const token=getAdminToken()||'';
-    const headers=Object.assign({'Content-Type':'application/json'}, options.headers||{});
-    if(token) headers.Authorization='Bearer '+token;
-    const r=await fetch(url,Object.assign({},options,{headers}));
-    let data={};
-    try{ data=await r.json(); }catch(_){}
-    if(!r.ok) throw new Error(data.error||('Request failed ('+r.status+')'));
-    return data;
-  };
-
-  function toLocalProduct(p){
-    const sizes=p.sizes||{S:0,M:0,L:0,XL:0,XXL:0};
-    return {
-      id:String(p.id), name:p.name||'', category:p.category||'T-Shirt',
-      price:Number(String(p.price||0).replace(/[^0-9.]/g,''))||0,
-      cost:Number(p.cost||0), sku:p.sku||('YT-'+String(p.id).replace(/^p_/,'').slice(0,12)),
-      description:p.description||'', sizes:Object.keys(sizes).filter(k=>['S','M','L','XL','XXL'].includes(k)),
-      colors:Array.isArray(p.colors)&&p.colors.length?p.colors:['Black'],
-      images:Array.isArray(p.images)&&p.images.length?p.images:[p.image||'ornament.jpg'],
-      image:p.image||((p.images||[])[0]||'ornament.jpg'),
-      hidden:p.active===false, featured:Boolean(p.featured)
-    };
-  }
-
-  function rebuildInventory(){
-    state.inventory=[];
-    (state.products||[]).forEach(p=>{
-      const raw=serverProducts.find(x=>String(x.id)===String(p.id));
-      const sizes=raw?.sizes||{};
-      (p.sizes||['S','M','L','XL','XXL']).forEach(sz=>{
-        state.inventory.push([p.id,sz,Math.max(0,Number(sizes[sz]||0)),5]);
-      });
-    });
-  }
-
-  let serverProducts=[];
-
-  async function syncFromServer(showToast){
-    const d=await api('/api/admin/data');
-    serverProducts=Array.isArray(d.products)?d.products:[];
-    state.products=serverProducts.map(toLocalProduct);
-    rebuildInventory();
-    state.orders=Array.isArray(d.orders)?d.orders:[];
-    state.coupons=(d.coupons||[]).map(c=>({
-      id:c.id,code:c.code,percent:c.type==='percent'?Number(c.value||0):0,
-      min:Number(c.minOrder||0),expiry:c.expiresAt?String(c.expiresAt).slice(0,10):'',
-      active:c.active!==false,type:c.type||'percent',value:Number(c.value||0)
-    }));
-    state.reviews=d.reviews||[];
-    state.newsletter=d.newsletter||[];
-    try{const sd=await fetch('/api/site-config',{cache:'no-store'}).then(r=>r.json());const site=sd.site||{};state.website={...(state.website||{}),...site};state.sectionSettings=site.sections||state.sectionSettings;state.colorPalette=Array.isArray(state.colorPalette)?state.colorPalette:['Black','White','Charcoal','Red','Blue','Green']}catch(_){}
-    save();
-    renderProducts(productSearch?.value||'');
-    renderInventory();
-    renderVariantManager();
-    if(typeof renderSectionManager==='function')renderSectionManager(); if(typeof syncColorManager==='function')syncColorManager();
-    renderCoupons();
-    renderOrders();
-    filterStore('all');
-    updateDash();
-    if(showToast) toast('Admin synced with website database');
-  }
-
-  async function doAdminLogin(){
-    const username=document.getElementById("loginUser").value.trim();
-    const password=document.getElementById("loginPass").value;
-    if(!username||!password){toast("Enter username and password");return}
-    try{
-      const x=await api("/api/admin/login",{method:"POST",body:JSON.stringify({username,password})});
-      sessionStorage.setItem("adminToken",x.token);
-      closeModal();
-      await syncFromServer(false);
-      go("dashboard");
-      toast("Connected to website database");
-    }catch(e){toast(e.message||"Unable to connect to server")}
-  }
-
-  async function saveProduct(){
-    const sizes=(document.getElementById('nsizes')?.value||'S,M,L,XL,XXL').split(',').map(x=>x.trim()).filter(Boolean);
-    const colors=(document.getElementById('ncolors')?.value||'Black,White,Charcoal').split(',').map(x=>x.trim()).filter(Boolean);
-    const files=document.getElementById('nimg')?.files||[];
-    let uploaded=[];
-    try{
-      for(const f of Array.from(files)){
-        if(!['image/png','image/jpeg','image/webp'].includes(f.type)){toast('Only PNG, JPG or WEBP images are supported');return}
-        if(f.size>5*1024*1024){toast('Each image must be 5MB or smaller');return}
-        const data=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f)});
-        const safeName=f.name.replace(/[^a-zA-Z0-9._-]/g,'_');
-        const up=await api('/api/admin/upload',{method:'POST',body:JSON.stringify({name:safeName,data})});
-        uploaded.push({filename:up.filename,url:up.url||('/uploads/'+encodeURIComponent(up.filename))});
-      }
-      const image=uploaded[0]?.url||'/photos/ornament.jpg';
-      const sizesObj={S:0,M:0,L:0,XL:0,XXL:0};
-      sizes.forEach(sz=>{if(sz in sizesObj)sizesObj[sz]=Math.max(0,Number(document.getElementById('nstock')?.value||0))});
-      const body={
-        name:document.getElementById('np')?.value.trim()||'New Product',
-        sku:document.getElementById('nsku')?.value.trim()||('YT-'+Date.now()),
-        price:String(Number(document.getElementById('nprice')?.value||0)),
-        cost:Number(document.getElementById('ncost')?.value||0),
-        category:document.getElementById('ncat')?.value||'T-Shirt',
-        description:document.getElementById('ndesc')?.value||'',
-        image, images:uploaded.length?uploaded.map(f=>f.url):[image], colors, sizes:sizesObj,
-        badge:'NEW', active:true
-      };
-      if(!body.price || body.price==='0'){toast('Selling price is required');return}
-      await api('/api/admin/products',{method:'POST',body:JSON.stringify(body)});
-      await syncFromServer(false);
-      closeModal(); toast('Product created on website');
-    }catch(e){toast(e.message||'Could not create product')}
-  }
-
-  async function saveEdit(id){
-    const p=state.products.find(x=>String(x.id)===String(id));
-    if(!p)return;
-    try{
-      const files=document.getElementById('ei')?.files||[];
-      let uploaded=[];
-      for(const f of Array.from(files)){
-        if(!['image/png','image/jpeg','image/webp'].includes(f.type)){toast('Only PNG, JPG or WEBP images are supported');return}
-        if(f.size>5*1024*1024){toast('Each image must be 5MB or smaller');return}
-        const data=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f)});
-        const safeName=f.name.replace(/[^a-zA-Z0-9._-]/g,'_');
-        const up=await api('/api/admin/upload',{method:'POST',body:JSON.stringify({name:safeName,data})});
-        uploaded.push({filename:up.filename,url:up.url||('/uploads/'+encodeURIComponent(up.filename))});
-      }
-      const sizesList=(document.getElementById('ez')?.value||'S,M,L,XL,XXL').split(',').map(x=>x.trim()).filter(Boolean);
-      const colors=(document.getElementById('ecolors')?.value||'Black,White,Charcoal').split(',').map(x=>x.trim()).filter(Boolean);
-      const old=serverProducts.find(x=>String(x.id)===String(id))||{};
-      const sizes={S:0,M:0,L:0,XL:0,XXL:0};
-      Object.keys(sizes).forEach(sz=>{sizes[sz]=Number(old.sizes?.[sz]||0)});
-      sizesList.forEach(sz=>{if(!(sz in sizes))sizes[sz]=Math.max(0,Number(old.sizes?.[sz]||0))});
-      const body={
-        name:document.getElementById('en')?.value.trim()||p.name,
-        sku:document.getElementById('es')?.value.trim()||p.sku,
-        price:String(Number(document.getElementById('ep')?.value||0)),
-        cost:Number(document.getElementById('ecost')?.value||0),
-        category:document.getElementById('ec')?.value.trim()||p.category,
-        description:document.getElementById('edesc')?.value||'',
-        colors,sizes,active:old.active!==false
-      };
-      if(uploaded.length){body.image=uploaded[0].url;body.images=(old.images||[]).concat(uploaded.map(f=>f.url))}
-      await api('/api/admin/products/'+encodeURIComponent(id),{method:'PATCH',body:JSON.stringify(body)});
-      await syncFromServer(false); closeModal(); toast('Product updated on website');
-    }catch(e){toast(e.message||'Could not update product')}
-  }
-
-  async function deleteProduct(id){
-    if(!confirm('Delete this product from the website?'))return;
-    try{await api('/api/admin/products/'+encodeURIComponent(id),{method:'DELETE'});await syncFromServer(false);toast('Product deleted')}catch(e){toast(e.message)}
-  }
-
-  async function toggleProduct(id){
-    const p=serverProducts.find(x=>String(x.id)===String(id));
-    if(!p)return;
-    try{await api('/api/admin/products/'+encodeURIComponent(id),{method:'PATCH',body:JSON.stringify({active:p.active===false})});await syncFromServer(false);toast(p.active===false?'Product shown':'Product hidden')}catch(e){toast(e.message)}
-  }
-
-  async function toggleFeatured(id){
-    const p=serverProducts.find(x=>String(x.id)===String(id));
-    if(!p)return;
-    try{await api('/api/admin/products/'+encodeURIComponent(id),{method:'PATCH',body:JSON.stringify({featured:!(p.featured)} )});await syncFromServer(false);toast('Featured status saved')}catch(e){toast(e.message)}
-  }
-
-  async function bulkProducts(action){
-    const ids=selectedProductIds(); if(!ids.length){toast('Select products first');return}
-    if(action==='delete'&&!confirm('Delete selected products?'))return;
-    try{
-      if(['hide','show','delete'].includes(action)){
-        await api('/api/admin/products/bulk',{method:'POST',body:JSON.stringify({action,ids})});
-      }else{toast('Use individual product editing for this action');return}
-      await syncFromServer(false); toast('Bulk update saved to website');
-    }catch(e){toast(e.message)}
-  }
-
-  async function stockUpdate(id,size,val){
-    const raw=serverProducts.find(x=>String(x.id)===String(id));
-    if(!raw)return;
-    const sizes=Object.assign({S:0,M:0,L:0,XL:0,XXL:0},raw.sizes||{});
-    sizes[size]=Math.max(0,Number(val)||0);
-    try{await api('/api/admin/products/'+encodeURIComponent(id),{method:'PATCH',body:JSON.stringify({sizes})});await syncFromServer(false);toast('Stock saved to website')}catch(e){toast(e.message)}
-  }
-
-  async function saveVariantManager(id){
-    const p=state.products.find(x=>String(x.id)===String(id)); if(!p)return;
-    const raw=serverProducts.find(x=>String(x.id)===String(id))||{};
-    const sizes=Object.assign({S:0,M:0,L:0,XL:0,XXL:0},raw.sizes||{});
-    (p.sizes||Object.keys(sizes)).forEach(sz=>{
-      const vals=[];
-      (p.colors||['Black']).forEach(c=>{
-        const key='vs_'+id+'_'+btoa(c).replace(/=/g,'')+'_'+sz;
-        const el=document.getElementById(key); if(el) vals.push(Number(el.value||0));
-      });
-      if(vals.length) sizes[sz]=Math.max(0,...vals);
-    });
-    try{await api('/api/admin/products/'+encodeURIComponent(id),{method:'PATCH',body:JSON.stringify({sizes,colors:p.colors||['Black']})});await syncFromServer(false);toast('Variant stock saved to website')}catch(e){toast(e.message)}
-  }
-
-  async function saveCoupon(){
-    const code=(document.getElementById('cc')?.value||'').trim().toUpperCase();
-    const value=Number(document.getElementById('cp')?.value||0);
-    const minOrder=Number(document.getElementById('cm')?.value||0);
-    const expiresAt=document.getElementById('ce')?.value||null;
-    try{await api('/api/admin/coupons',{method:'POST',body:JSON.stringify({code,type:'percent',value,minOrder,expiresAt})});await syncFromServer(false);closeModal();toast('Coupon created on website')}catch(e){toast(e.message)}
-  }
-
-  async function toggleCoupon(i){
-    const c=state.coupons[i]; if(!c)return;
-    try{await api('/api/admin/coupons/'+encodeURIComponent(c.id),{method:'PATCH',body:JSON.stringify({active:!c.active})});await syncFromServer(false);toast('Coupon status saved')}catch(e){toast(e.message)}
-  }
-
-  async function syncOnOpen(){
-    if(getAdminToken()){
-      try{await syncFromServer(false)}catch(_){}
-    }
-  }
-  window.addEventListener('load',syncOnOpen);
-})();
-</script>
-
 <script>
 /* YOUR TYPE — FINAL SERVER/UI COMPATIBILITY PATCH */
 (function(){
@@ -1328,8 +1047,6 @@ async function restoreServerBackup(){
     if(typeof renderWishlist==='function')renderWishlist();
   };
 
-  window.legacyDownloadOrdersStale=function(){const rows=(state.orders||[]).map(o=>{const p=pid(o.productId);return [o.id||'',o.customer||'',p?.name||'',o.size||'',Math.max(1,num(o.qty)),num(o.price)*Math.max(1,num(o.qty)),o.status||''].map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')});downloadText('YOUR_TYPE_ORDERS_LEGACY.csv','Order,Customer,Product,Size,Qty,Total,Status\n'+rows.join('\n'),'text/csv')};
-
   window.addEventListener('load',()=>setTimeout(()=>refreshAdminData().catch(e=>console.warn(e)),200));
 })();
 </script>
@@ -1451,36 +1168,30 @@ async function restoreServerBackup(){
 })();
 </script>
 
-<!-- Music playback bar + player are provided by music-player.js (shared across the whole site) -->
-<script src="music-player.js"></script>
-
 <script>
 // ---------------------------------------------------------
-// Private Music Panel — SEARCH ONLY, via YouTube Data API v3.
-// Actual playback (the bar + YouTube player) lives in
-// music-player.js so it can keep playing on every other page.
-// Nothing is hosted or downloaded on this server; YouTube's
-// own servers handle the audio/video. Keep this tab behind
-// admin login only.
+// Private Music Panel — SEARCH ONLY.
+// SECURITY: no API key lives in this file. The browser calls our
+// own server at /api/admin/music-search, and the server (which
+// holds the real YouTube API key as a secret environment
+// variable, never sent to the browser) calls YouTube on our
+// behalf. This route must require admin login, same as every
+// other /api/admin/* route, so only logged-in admins can use it.
 // ---------------------------------------------------------
-const YT_MUSIC_API_KEY = 'AIzaSyD6yKVtt6z-2YLEYIihDEzaElGa_GwwiaY';
-
 function musicSearch(){
   const q = (document.getElementById('musicQuery')?.value || '').trim();
   const box = document.getElementById('musicResults');
   if(!q){ return; }
   box.innerHTML = '<p class="muted">Search ho raha hai...</p>';
-  fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=12&type=video&videoCategoryId=10&q=${encodeURIComponent(q)}&key=${YT_MUSIC_API_KEY}`)
-    .then(r => r.json())
+  api2('/api/admin/music-search?q='+encodeURIComponent(q))
     .then(d => {
-      if(d.error){ box.innerHTML = '<p class="muted">Error: '+fcEscapeMusic(d.error.message)+'</p>'; return; }
       const items = d.items || [];
       if(!items.length){ box.innerHTML = '<p class="muted">Kuch nahi mila, dusra naam try karein.</p>'; return; }
       box.innerHTML = items.map(it => {
-        const vid = it.id.videoId;
-        const title = fcEscapeMusic(it.snippet.title);
-        const thumb = it.snippet.thumbnails.default.url;
-        const channel = fcEscapeMusic(it.snippet.channelTitle);
+        const vid = it.videoId;
+        const title = fcEscapeMusic(it.title);
+        const thumb = it.thumbnail;
+        const channel = fcEscapeMusic(it.channelTitle||'');
         return `<div onclick="musicPlay('${vid}', decodeURIComponent('${encodeURIComponent(title)}'), '${thumb}')"
             style="display:flex;gap:10px;align-items:center;padding:8px;border-radius:10px;cursor:pointer;border:1px solid #1b2a3b;margin-bottom:6px;background:#09111a">
           <img src="${thumb}" alt="" style="width:56px;height:56px;border-radius:8px;object-fit:cover;flex-shrink:0">
@@ -1491,16 +1202,26 @@ function musicSearch(){
         </div>`;
       }).join('');
     })
-    .catch(() => { box.innerHTML = '<p class="muted">Search fail ho gaya. API key check karein.</p>'; });
+    .catch(e => { box.innerHTML = '<p class="muted">Search fail ho gaya: '+fcEscapeMusic(e.message||'server error')+'</p>'; });
 }
 
 function fcEscapeMusic(s){
   return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/'/g,'&#39;').replace(/"/g,'&quot;');
 }
 
-// musicPlay() itself now lives in music-player.js (window.musicPlay) —
-// it's called from the search results above exactly as before.
+// Simple shared player bar so playback continues while browsing other tabs.
+window.musicPlay=window.musicPlay||function(videoId,title,thumb){
+  let bar=document.getElementById('ytMusicBar');
+  if(!bar){
+    bar=document.createElement('div');
+    bar.id='ytMusicBar';
+    bar.style.cssText='position:fixed;left:10px;right:10px;bottom:10px;z-index:90;background:#0b111a;border:1px solid #273244;border-radius:14px;padding:8px 10px;display:flex;align-items:center;gap:10px;box-shadow:0 14px 40px #000c';
+    document.body.appendChild(bar);
+  }
+  bar.innerHTML=`<img src="${thumb}" style="width:40px;height:40px;border-radius:8px;object-fit:cover"><div style="flex:1;min-width:0;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#eef2f7">${fcEscapeMusic(title)}</div><iframe width="0" height="0" style="display:none" src="https://www.youtube.com/embed/${encodeURIComponent(videoId)}?autoplay=1" allow="autoplay" title="music"></iframe><button class="btn" onclick="document.getElementById('ytMusicBar').remove()">✕</button>`;
+};
 </script>
+
 <script>
 /* YOUR TYPE — Branded Packing Slip PDF (image-quality export) */
 (function(){
