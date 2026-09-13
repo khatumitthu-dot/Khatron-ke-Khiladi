@@ -234,7 +234,10 @@ async function hydrateDb(db, options={}){
 
 async function persistDb(db, initial=false){
   if(!enabled) return {enabled:false};
-  const d=deep(db);
+  // NOTE: callers (queueSave) already pass an isolated deep-cloned snapshot,
+  // so we don't clone again here — doing so used to double memory usage on
+  // every single save (however small the actual change was).
+  const d=db;
   // Keep the Supabase products payload compatible with the existing products table.
   // The current schema contains: id, name, category, price, cost, sku, description,
   // image, images, sizes, colors, active, featured, created_at, updated_at.
@@ -331,6 +334,24 @@ async function persistDb(db, initial=false){
   return {enabled:true,source:'supabase',initial};
 }
 
+// Lightweight save used for pure settings/website-control changes (store name,
+// phone, GST %, homepage banner, section toggles, etc). Unlike persistDb, this
+// does NOT touch products/orders/order_items/reviews/coupons/audit — only the
+// two small config tables. This avoids re-uploading the entire store (which
+// grows slower and heavier as orders pile up, and was timing out / crashing
+// the process on every single settings save).
+async function persistSiteOnly(db){
+  if(!enabled) return {enabled:false};
+  const d=db;
+  const siteConfigRow={id:1,hero:d.site?.hero||'YOUR TYPE',announcement:d.site?.announcement||'',sections:d.site?.sections||{},section_products:d.site?.sectionProducts||{},color_palette:d.site?.colorPalette||[],store:d.site?.store||{},categories:d.site?.categories||[]};
+  try{ await request('site_config','POST',siteConfigRow,'on_conflict=id'); }
+  catch(e){ if(/\b404\b/.test(cleanError(e))){ disabledTables.add('site_config'); console.warn('[Supabase] Optional table "site_config" is not available through PostgREST; skipping its sync.'); } else throw e; }
+  try{ await request('store_settings','POST',{id:1,gst:Number(d.settings?.gst||0),shipping:Number(d.settings?.shipping||0),free_shipping:Number(d.settings?.freeShipping||0),gateway:d.settings?.gateway||{},courier:d.settings?.courier||{},notifications:d.settings?.notifications||{},role:d.settings?.role||'Super Admin'},'on_conflict=id'); }
+  catch(e){ if(/\b404\b/.test(cleanError(e))){ disabledTables.add('store_settings'); console.warn('[Supabase] Optional table "store_settings" is not available through PostgREST; skipping its sync.'); } else throw e; }
+  lastSync = new Date().toISOString(); lastError=null;
+  return {enabled:true,source:'supabase'};
+}
+
 function queueSave(db){
   if(!enabled) return Promise.resolve({enabled:false});
   const snapshot=deep(db);
@@ -360,4 +381,4 @@ async function ping(){
   }
 }
 
-module.exports={enabled,hydrateDb,persistDb,queueSave,flush,status,ping,uploadMedia,deleteMedia,deleteWhere,listMedia,publicMediaUrl,migrateLocalUploads,ensureStorageBucket,couponAlreadyRedeemed,reserveCouponRedemption,releaseCouponRedemption};
+module.exports={enabled,hydrateDb,persistDb,persistSiteOnly,queueSave,flush,status,ping,uploadMedia,deleteMedia,deleteWhere,listMedia,publicMediaUrl,migrateLocalUploads,ensureStorageBucket,couponAlreadyRedeemed,reserveCouponRedemption,releaseCouponRedemption};

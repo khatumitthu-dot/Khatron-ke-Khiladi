@@ -38,6 +38,19 @@ async function saveAndFlush(db){
   save(db);
   if(storageReady && supabaseStore.enabled) await supabaseStore.flush();
 }
+// Use for pure settings/website-control saves (store info, GST %, homepage
+// banner, section toggles, etc). Writes local data.json immediately, and only
+// pushes the small site_config/store_settings rows to Supabase — it does NOT
+// re-upload the entire products/orders/order_items history like saveAndFlush
+// does. This keeps these frequent, small admin edits fast and prevents the
+// server from timing out (and Render showing a 502) as your order history grows.
+async function saveSiteOnly(db){
+  fs.writeFileSync(DATA,JSON.stringify(db,null,2));
+  if(storageReady && supabaseStore.enabled){
+    try{ await supabaseStore.persistSiteOnly(db); }
+    catch(e){ console.error('[Supabase] site settings save failed:',e.message||e); }
+  }
+}
 const db=load();
 db.orders ||= []; db.newsletter ||= []; db.users ||= []; db.products ||= []; db.sessions ||= {}; db.reviews ||= []; db.coupons ||= []; db.returns ||= []; db.notifications ||= []; db.audit ||= [];
 db.settings ||= {gst:5,shipping:99,freeShipping:1999};
@@ -103,7 +116,7 @@ async function api(req,res,p){
   if(req.method==='GET'&&p==='/api/auth/orders'){const s=auth(req,'customer');if(!s)return send(res,401,{error:'Unauthorized'},'application/json',origin);return send(res,200,{orders:db.orders.filter(o=>o.userId===s.userId).map(o=>({orderId:o.orderId,status:o.status,date:o.date,total:o.total,items:o.items}))},'application/json',origin)}
   if(req.method==='POST'&&p==='/api/newsletter'){const x=await body(req),email=String(x.email||'').trim().toLowerCase();if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return send(res,400,{error:'Invalid email'},'application/json',origin);if(!db.newsletter.some(v=>v.email===email))db.newsletter.push({email,createdAt:new Date().toISOString()});save(db);return send(res,201,{ok:true},'application/json',origin)}
   if(req.method==='GET'&&p==='/api/site-config')return send(res,200,{site:db.site},'application/json',origin);
-  if(req.method==='PATCH'&&p==='/api/admin/site-config'){if(!auth(req,'admin'))return send(res,401,{error:'Unauthorized'},'application/json',origin);const x=await body(req);if(x.hero!==undefined)db.site.hero=String(x.hero);if(x.announcement!==undefined)db.site.announcement=String(x.announcement);if(x.sections&&typeof x.sections==='object')db.site.sections=x.sections;if(x.sectionProducts&&typeof x.sectionProducts==='object'){const incoming={};Object.entries(x.sectionProducts).forEach(([section,ids])=>{if(!Array.isArray(ids))return;incoming[String(section)]=[...new Set(ids.map(v=>String(v)).filter(id=>db.products.some(prod=>String(prod.id)===id)))];});const current=db.site.sectionProducts&&typeof db.site.sectionProducts==='object'?db.site.sectionProducts:{};const merged={...current,...incoming};const touchedIds=new Set(Object.values(incoming).flat());Object.keys(merged).forEach(section=>{if(incoming[section]===undefined)return;merged[section]=incoming[section];});Object.keys(merged).forEach(section=>{if(!Array.isArray(merged[section]))merged[section]=[];merged[section]=[...new Set(merged[section].map(v=>String(v)).filter(id=>db.products.some(prod=>String(prod.id)===id)))];});if(touchedIds.size){Object.keys(merged).forEach(section=>{if(incoming[section]!==undefined)return;merged[section]=merged[section].filter(id=>!touchedIds.has(String(id)));});}db.site.sectionProducts=merged}if(Array.isArray(x.colorPalette))db.site.colorPalette=x.colorPalette.map(v=>String(v).trim()).filter(Boolean);audit('site.update');await saveAndFlush(db);return send(res,200,{ok:true,site:db.site},'application/json',origin)}
+  if(req.method==='PATCH'&&p==='/api/admin/site-config'){if(!auth(req,'admin'))return send(res,401,{error:'Unauthorized'},'application/json',origin);const x=await body(req);if(x.hero!==undefined)db.site.hero=String(x.hero);if(x.announcement!==undefined)db.site.announcement=String(x.announcement);if(x.sections&&typeof x.sections==='object')db.site.sections=x.sections;if(x.sectionProducts&&typeof x.sectionProducts==='object'){const incoming={};Object.entries(x.sectionProducts).forEach(([section,ids])=>{if(!Array.isArray(ids))return;incoming[String(section)]=[...new Set(ids.map(v=>String(v)).filter(id=>db.products.some(prod=>String(prod.id)===id)))];});const current=db.site.sectionProducts&&typeof db.site.sectionProducts==='object'?db.site.sectionProducts:{};const merged={...current,...incoming};const touchedIds=new Set(Object.values(incoming).flat());Object.keys(merged).forEach(section=>{if(incoming[section]===undefined)return;merged[section]=incoming[section];});Object.keys(merged).forEach(section=>{if(!Array.isArray(merged[section]))merged[section]=[];merged[section]=[...new Set(merged[section].map(v=>String(v)).filter(id=>db.products.some(prod=>String(prod.id)===id)))];});if(touchedIds.size){Object.keys(merged).forEach(section=>{if(incoming[section]!==undefined)return;merged[section]=merged[section].filter(id=>!touchedIds.has(String(id)));});}db.site.sectionProducts=merged}if(Array.isArray(x.colorPalette))db.site.colorPalette=x.colorPalette.map(v=>String(v).trim()).filter(Boolean);audit('site.update');await saveSiteOnly(db);return send(res,200,{ok:true,site:db.site},'application/json',origin)}
 
   if(req.method==='GET'&&p==='/api/products')return send(res,200,{products:db.products.filter(p=>p.active!==false).map(safeProduct)},'application/json',origin);
   if(req.method==='GET'&&p.startsWith('/api/reviews/')){const name=decodeURIComponent(p.slice('/api/reviews/'.length));return send(res,200,{reviews:db.reviews.filter(r=>r.product===name&&r.status!=='rejected').slice(-50).reverse()},'application/json',origin)}
@@ -164,7 +177,7 @@ async function api(req,res,p){
    const result=await supabaseStore.ping();
    return send(res,200,result,'application/json',origin);
   }
-  if(req.method==='PATCH'&&p==='/api/admin/settings'){if(!auth(req,'admin'))return send(res,401,{error:'Unauthorized'},'application/json',origin);const x=await body(req);db.settings={...db.settings,...x};audit('settings.update');save(db);return send(res,200,{ok:true,settings:db.settings},'application/json',origin)}
+  if(req.method==='PATCH'&&p==='/api/admin/settings'){if(!auth(req,'admin'))return send(res,401,{error:'Unauthorized'},'application/json',origin);const x=await body(req);db.settings={...db.settings,...x};audit('settings.update');await saveSiteOnly(db);return send(res,200,{ok:true,settings:db.settings},'application/json',origin)}
 
   if(req.method==='PATCH'&&p.startsWith('/api/admin/orders/')){if(!auth(req,'admin'))return send(res,401,{error:'Unauthorized'},'application/json',origin);const id=decodeURIComponent(p.slice('/api/admin/orders/'.length)),x=await body(req),o=db.orders.find(v=>v.orderId===id);if(!o)return send(res,404,{error:'Order not found'},'application/json',origin);if(x.status!==undefined&&!STATUSES.includes(x.status))return send(res,400,{error:'Invalid order status'},'application/json',origin);for(const k of ['status','awb','courier','tracking_url','verified'])if(x[k]!==undefined)o[k]=x[k];audit('order.update',{orderId:id,fields:Object.keys(x)});await saveAndFlush(db);return send(res,200,o,'application/json',origin)}
   if(req.method==='DELETE'&&p.startsWith('/api/admin/orders/')){if(!auth(req,'admin'))return send(res,401,{error:'Unauthorized'},'application/json',origin);const id=decodeURIComponent(p.slice('/api/admin/orders/'.length)),i=db.orders.findIndex(v=>v.orderId===id);if(i<0)return send(res,404,{error:'Order not found'},'application/json',origin);db.orders.splice(i,1);if(supabaseStore.enabled) await supabaseStore.deleteWhere('orders','order_id',id);if(supabaseStore.enabled) await supabaseStore.deleteWhere('order_items','order_id',id);audit('order.delete',{orderId:id});await saveAndFlush(db);return send(res,200,{ok:true},'application/json',origin)}
@@ -228,14 +241,14 @@ async function api(req,res,p){
   // FULL WEBSITE CONTROL compatibility endpoints
   if(req.method==='PATCH'&&p==='/api/admin/store-settings'){
     if(!auth(req,'admin'))return send(res,401,{error:'Unauthorized'},'application/json',origin);
-    const x=await body(req);db.site.store={...(db.site.store||{}),name:String(x.name||'YOUR TYPE'),phone:String(x.phone||''),whatsapp:String(x.whatsapp||''),email:String(x.email||''),address:String(x.address||''),currency:String(x.currency||'INR')};audit('store.settings.update');await saveAndFlush(db);return send(res,200,{ok:true,store:db.site.store},'application/json',origin);
+    const x=await body(req);db.site.store={...(db.site.store||{}),name:String(x.name||'YOUR TYPE'),phone:String(x.phone||''),whatsapp:String(x.whatsapp||''),email:String(x.email||''),address:String(x.address||''),currency:String(x.currency||'INR')};audit('store.settings.update');await saveSiteOnly(db);return send(res,200,{ok:true,store:db.site.store},'application/json',origin);
   }
   if(req.method==='PATCH'&&p==='/api/admin/site-content'){
     if(!auth(req,'admin'))return send(res,401,{error:'Unauthorized'},'application/json',origin);
     const x=await body(req);
     const trendCardImages=Array.from({length:3},(_,i)=>String((Array.isArray(x.trendCardImages)?x.trendCardImages[i]:'')||'').trim());
     db.site.content={...(db.site.content||{}),banner:String(x.banner||''),bannerButton:String(x.bannerButton||''),bannerLink:String(x.bannerLink||''),editorialImage:String(x.editorialImage||''),trendCardImages};
-    audit('site.content.update');await saveAndFlush(db);return send(res,200,{ok:true,content:db.site.content},'application/json',origin);
+    audit('site.content.update');await saveSiteOnly(db);return send(res,200,{ok:true,content:db.site.content},'application/json',origin);
   }
   if(req.method==='GET'&&p==='/api/admin/media'){
     if(!auth(req,'admin'))return send(res,401,{error:'Unauthorized'},'application/json',origin);
