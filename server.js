@@ -115,7 +115,7 @@ async function api(req,res,p){
   if(req.method==='GET'&&p==='/api/auth/me'){const s=auth(req,'customer');if(!s)return send(res,401,{error:'Unauthorized'},'application/json',origin);const u=db.users.find(v=>v.id===s.userId);if(!u)return send(res,404,{error:'Account not found'},'application/json',origin);return send(res,200,{id:u.id,name:u.name,email:u.email},'application/json',origin)}
   if(req.method==='GET'&&p==='/api/auth/orders'){const s=auth(req,'customer');if(!s)return send(res,401,{error:'Unauthorized'},'application/json',origin);return send(res,200,{orders:db.orders.filter(o=>o.userId===s.userId).map(o=>({orderId:o.orderId,status:o.status,date:o.date,total:o.total,items:o.items}))},'application/json',origin)}
   if(req.method==='POST'&&p==='/api/newsletter'){const x=await body(req),email=String(x.email||'').trim().toLowerCase();if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return send(res,400,{error:'Invalid email'},'application/json',origin);if(!db.newsletter.some(v=>v.email===email))db.newsletter.push({email,createdAt:new Date().toISOString()});save(db);return send(res,201,{ok:true},'application/json',origin)}
-  if(req.method==='GET'&&p==='/api/site-config')return send(res,200,{site:db.site},'application/json',origin);
+  if(req.method==='GET'&&p==='/api/site-config')return send(res,200,{site:db.site,settings:{gst:db.settings.gst,shipping:db.settings.shipping,freeShipping:db.settings.freeShipping}},'application/json',origin);
   if(req.method==='PATCH'&&p==='/api/admin/site-config'){if(!auth(req,'admin'))return send(res,401,{error:'Unauthorized'},'application/json',origin);const x=await body(req);if(x.hero!==undefined)db.site.hero=String(x.hero);if(x.announcement!==undefined)db.site.announcement=String(x.announcement);if(x.sections&&typeof x.sections==='object')db.site.sections=x.sections;if(x.sectionProducts&&typeof x.sectionProducts==='object'){const incoming={};Object.entries(x.sectionProducts).forEach(([section,ids])=>{if(!Array.isArray(ids))return;incoming[String(section)]=[...new Set(ids.map(v=>String(v)).filter(id=>db.products.some(prod=>String(prod.id)===id)))];});const current=db.site.sectionProducts&&typeof db.site.sectionProducts==='object'?db.site.sectionProducts:{};const merged={...current,...incoming};const touchedIds=new Set(Object.values(incoming).flat());Object.keys(merged).forEach(section=>{if(incoming[section]===undefined)return;merged[section]=incoming[section];});Object.keys(merged).forEach(section=>{if(!Array.isArray(merged[section]))merged[section]=[];merged[section]=[...new Set(merged[section].map(v=>String(v)).filter(id=>db.products.some(prod=>String(prod.id)===id)))];});if(touchedIds.size){Object.keys(merged).forEach(section=>{if(incoming[section]!==undefined)return;merged[section]=merged[section].filter(id=>!touchedIds.has(String(id)));});}db.site.sectionProducts=merged}if(Array.isArray(x.colorPalette))db.site.colorPalette=x.colorPalette.map(v=>String(v).trim()).filter(Boolean);audit('site.update');await saveSiteOnly(db);return send(res,200,{ok:true,site:db.site},'application/json',origin)}
 
   if(req.method==='GET'&&p==='/api/products')return send(res,200,{products:db.products.filter(p=>p.active!==false).map(safeProduct)},'application/json',origin);
@@ -304,11 +304,15 @@ async function bootstrap(){
       db.products=db.products.filter(p=>!db.deletedProductIds.includes(String(p.id)));
     }
     storageReady=true;
-    fs.writeFileSync(DATA,JSON.stringify(db,null,2));
-    server.listen(PORT,()=>console.log(`YOUR TYPE running at http://localhost:${PORT}`));
   }catch(e){
-    console.error('[Storage] Startup failed:',e.message||e);
-    process.exit(1);
+    // IMPORTANT: a slow/unreachable Supabase (paused free-tier project, transient
+    // 504, etc.) must NEVER take the whole site down. Log it and keep serving
+    // from the local data.json snapshot already loaded above. storageReady stays
+    // false, so writes are saved locally only until a later save succeeds and
+    // flips storageReady back on.
+    console.error('[Storage] Supabase hydrate failed, continuing with local data.json:',e.message||e);
   }
+  fs.writeFileSync(DATA,JSON.stringify(db,null,2));
+  server.listen(PORT,()=>console.log(`YOUR TYPE running at http://localhost:${PORT}`));
 }
 bootstrap();
