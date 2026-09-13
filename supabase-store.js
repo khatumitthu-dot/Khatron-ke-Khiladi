@@ -285,11 +285,20 @@ async function persistDb(db, initial=false){
       throw e;
     }
   }
-
-  await replaceTable('products',productRows,'id');
-  await replaceTable('customers',customerRows,'id');
-  await replaceTable('orders',orderRows,'order_id');
-  if(!disabledTables.has('order_items')){
+  async function upsertSingleRow(table, row){
+    if(disabledTables.has(table)) return;
+    try{ await request(table,'POST',row,'on_conflict=id'); }
+    catch(e){
+      if(/\b404\b/.test(cleanError(e))){
+        disabledTables.add(table);
+        console.warn(`[Supabase] Optional table "${table}" is not available through PostgREST; skipping its sync.`);
+        return;
+      }
+      throw e;
+    }
+  }
+  async function syncOrderItems(){
+    if(disabledTables.has('order_items')) return;
     try{
       // Only refresh items belonging to orders present in this snapshot. Never
       // wipe every order_item just because another save (e.g. product update)
@@ -298,10 +307,10 @@ async function persistDb(db, initial=false){
       if(localOrderIds.length){
         const existing=await request('order_items','GET',null,'select=order_id');
         const localSet=new Set(localOrderIds);
-        for(const r of existing||[]){
-          const oid=String(r.order_id||'');
-          if(localSet.has(oid)) await request('order_items','DELETE',null,'order_id=eq.'+encodeURIComponent(oid));
-        }
+        const toDelete=(existing||[]).map(r=>String(r.order_id||'')).filter(oid=>localSet.has(oid));
+        // Deletes are independent of each other — fire them concurrently instead
+        // of one row at a time.
+        await Promise.all(toDelete.map(oid=>request('order_items','DELETE',null,'order_id=eq.'+encodeURIComponent(oid))));
         if(itemRows.length) await request('order_items','POST',itemRows);
       }
     }catch(e){
@@ -313,23 +322,37 @@ async function persistDb(db, initial=false){
       }
     }
   }
-  await replaceTable('reviews',reviewRows,'id');
-  await replaceTable('coupons',couponRows,'id');
-  await replaceTable('returns',returnRows,'id');
-  await replaceTable('newsletter',newsletterRows,'email');
-  await replaceTable('notifications',notificationRows,'id');
-  await replaceTable('audit',auditRows,'id');
+
+  // Products/customers/orders have no dependency on each other, so sync them
+  // concurrently. order_items must wait for orders (foreign key), so it runs
+  // right after. Everything else below is fully independent of all of the
+  // above and of each other, so it all runs in one final concurrent batch.
+  // This turns what used to be ~14 sequential network round-trips (very slow
+  // against a distant/loaded database) into 3 short concurrent batches.
+  await Promise.all([
+    replaceTable('products',productRows,'id'),
+    replaceTable('customers',customerRows,'id'),
+    replaceTable('orders',orderRows,'order_id'),
+  ]);
+  await syncOrderItems();
   // Keep this payload aligned with the deployed site_config table. The current
   // schema does not expose a `content` column (PostgREST schema-cache error
   // otherwise makes every site-config save fail with HTTP 400). The content
   // object is still retained in the local runtime and served by /api/site-config.
   const siteConfigRow={id:1,hero:d.site?.hero||'YOUR TYPE',announcement:d.site?.announcement||'',sections:d.site?.sections||{},section_products:d.site?.sectionProducts||{},color_palette:d.site?.colorPalette||[],store:d.site?.store||{},categories:d.site?.categories||[]};
-  try{ await request('site_config','POST',siteConfigRow,'on_conflict=id'); }
-  catch(e){ if(/\b404\b/.test(cleanError(e))){ disabledTables.add('site_config'); console.warn('[Supabase] Optional table "site_config" is not available through PostgREST; skipping its sync.'); } else throw e; }
-  try{ await request('store_settings','POST',{id:1,gst:Number(d.settings?.gst||0),shipping:Number(d.settings?.shipping||0),free_shipping:Number(d.settings?.freeShipping||0),gateway:d.settings?.gateway||{},courier:d.settings?.courier||{},notifications:d.settings?.notifications||{},role:d.settings?.role||'Super Admin'},'on_conflict=id'); }
-  catch(e){ if(/\b404\b/.test(cleanError(e))){ disabledTables.add('store_settings'); console.warn('[Supabase] Optional table "store_settings" is not available through PostgREST; skipping its sync.'); } else throw e; }
-  await replaceTable('coupon_redemptions',(d.couponRedemptions||[]).map(r=>({id:String(r.id),coupon_code:String(r.couponCode||'').toUpperCase(),customer_id:r.customerId||null,email:String(r.email||'').toLowerCase(),phone:String(r.phone||'').replace(/\D/g,''),order_id:String(r.orderId||''),redeemed_at:r.redeemedAt||undefined})),'id');
-  await replaceTable('deleted_product_ids',(d.deletedProductIds||[]).map(id=>({product_id:String(id)})),'product_id');
+  const storeSettingsRow={id:1,gst:Number(d.settings?.gst||0),shipping:Number(d.settings?.shipping||0),free_shipping:Number(d.settings?.freeShipping||0),gateway:d.settings?.gateway||{},courier:d.settings?.courier||{},notifications:d.settings?.notifications||{},role:d.settings?.role||'Super Admin'};
+  await Promise.all([
+    replaceTable('reviews',reviewRows,'id'),
+    replaceTable('coupons',couponRows,'id'),
+    replaceTable('returns',returnRows,'id'),
+    replaceTable('newsletter',newsletterRows,'email'),
+    replaceTable('notifications',notificationRows,'id'),
+    replaceTable('audit',auditRows,'id'),
+    upsertSingleRow('site_config',siteConfigRow),
+    upsertSingleRow('store_settings',storeSettingsRow),
+    replaceTable('coupon_redemptions',(d.couponRedemptions||[]).map(r=>({id:String(r.id),coupon_code:String(r.couponCode||'').toUpperCase(),customer_id:r.customerId||null,email:String(r.email||'').toLowerCase(),phone:String(r.phone||'').replace(/\D/g,''),order_id:String(r.orderId||''),redeemed_at:r.redeemedAt||undefined})),'id'),
+    replaceTable('deleted_product_ids',(d.deletedProductIds||[]).map(id=>({product_id:String(id)})),'product_id'),
+  ]);
   lastSync = new Date().toISOString(); lastError=null;
   return {enabled:true,source:'supabase',initial};
 }
